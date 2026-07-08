@@ -493,11 +493,16 @@ textarea:focus {
   font-size: 1.25rem;
 }
 
-.interview-layout,
 .history-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
   gap: 18px;
+}
+
+.interview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
 }
 
 .question-area,
@@ -514,23 +519,15 @@ textarea:focus {
 
 .question-card {
   margin-top: 8px;
-  min-height: 150px;
-  padding: 20px;
+  min-height: 180px;
+  padding: clamp(18px, 3vw, 28px);
   border-radius: var(--radius);
   background: var(--surface-soft);
-  font-size: 1.2rem;
+  font-size: clamp(1.15rem, 2.4vw, 1.6rem);
   font-weight: 700;
   line-height: 1.7;
 }
 
-.follow-up-box {
-  margin-top: 16px;
-  padding: 16px;
-  border-left: 4px solid var(--accent);
-  background: #fff7ed;
-}
-
-.follow-up-box p:last-child,
 .inline-feedback,
 .history-detail p {
   margin: 8px 0 0;
@@ -538,11 +535,27 @@ textarea:focus {
   line-height: 1.65;
 }
 
+.timeline-panel {
+  background: var(--surface-soft);
+}
+
+.timeline-summary {
+  cursor: pointer;
+  color: var(--primary-dark);
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.timeline-panel[open] .chat-timeline {
+  margin-top: 12px;
+}
+
 .chat-timeline {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 390px;
+  max-height: 260px;
   overflow: auto;
   padding-right: 4px;
 }
@@ -576,6 +589,12 @@ textarea:focus {
 
 .answer-panel {
   margin-top: 18px;
+}
+
+.interview-status {
+  min-height: 40px;
+  background: transparent;
+  border: 1px solid var(--line);
 }
 
 .voice-input-panel,

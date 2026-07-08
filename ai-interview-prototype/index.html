@@ -303,18 +303,12 @@
         <div class="question-area" aria-live="polite">
           <p class="panel-label">AI質問</p>
           <div id="currentQuestion" class="question-card">設定を完了すると、ここに質問が表示されます。</div>
-          <div class="follow-up-box">
-            <p class="panel-label">直前回答への深掘り</p>
-            <p id="followUpQuestion">回答後、追加で確認されやすい質問が表示されます。</p>
-          </div>
         </div>
 
-        <aside class="timeline-panel" aria-labelledby="timelineTitle">
-          <div class="panel-heading-row">
-            <p id="timelineTitle" class="panel-label">会話ログ</p>
-          </div>
+        <details class="timeline-panel" aria-labelledby="timelineTitle">
+          <summary id="timelineTitle" class="timeline-summary">回答ログ</summary>
           <div id="chatTimeline" class="chat-timeline"></div>
-        </aside>
+        </details>
       </div>
 
       <div class="answer-panel">
@@ -330,7 +324,7 @@
             認識中の文字起こしがここに表示されます。
           </div>
         </div>
-        <div id="feedbackSummary" class="inline-feedback" aria-live="polite">回答ごとの簡易フィードバックがここに表示されます。</div>
+        <div id="feedbackSummary" class="inline-feedback interview-status" aria-live="polite">面接官の質問に答えてください。評価の詳細は終了後に確認できます。</div>
         <div class="form-actions">
           <button id="submitAnswerBtn" class="button button-primary" type="button">回答を送信</button>
           <button id="finishInterviewBtn" class="button button-secondary" type="button">面接を終了</button>

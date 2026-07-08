@@ -1603,7 +1603,6 @@
     };
     setText("currentQuestion", "質問を生成中です...");
     setText("feedbackSummary", "");
-    setText("followUpQuestion", "");
     setText("progressText", "質問 1 / " + settings.questionCount);
     var timeline = $("chatTimeline");
     if (timeline) {
@@ -1740,18 +1739,18 @@
       return;
     }
 
-    appState.currentQuestion = evaluation.nextQuestion || await getInterviewQuestion(appState.settings);
+    appState.currentQuestion = evaluation.deepDiveQuestion || evaluation.nextQuestion || await getInterviewQuestion(appState.settings);
     appState.currentExpectedAnswerData = null;
     setBusy(true, "次の評価基準を生成中です...");
     appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, appState.settings);
     setText("currentQuestion", appState.currentQuestion);
     setText("progressText", "質問 " + (appState.questionIndex + 1) + " / " + appState.settings.questionCount);
+    setText("feedbackSummary", "次の質問に回答してください。評価の詳細は終了後に確認できます。");
     setBusy(false);
   }
 
   function renderImmediateFeedback(evaluation) {
-    setText("feedbackSummary", evaluation.summary + " 改善方針: " + evaluation.direction);
-    setText("followUpQuestion", evaluation.deepDiveQuestion);
+    setText("feedbackSummary", "回答を受け付けました。次の質問に進みます。");
   }
 
   function appendTimelineEntry(question, answer, evaluation) {
@@ -1766,7 +1765,7 @@
     var answerEl = document.createElement("p");
     answerEl.textContent = "A. " + answer;
     var scoreEl = document.createElement("p");
-    scoreEl.textContent = "評価: " + evaluation.score + "点 / 深掘り: " + evaluation.deepDiveQuestion;
+    scoreEl.textContent = "評価は面接終了後にまとめて確認できます。";
     item.appendChild(questionEl);
     item.appendChild(answerEl);
     item.appendChild(scoreEl);
