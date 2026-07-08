@@ -28,6 +28,128 @@ function sendText(response, statusCode, body) {
   response.end(body);
 }
 
+function sendJson(response, statusCode, body) {
+  response.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
+  response.end(JSON.stringify(body));
+}
+
+async function readJsonBody(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(chunk);
+    if (Buffer.concat(chunks).length > 1024 * 1024) {
+      throw new Error("Request body is too large");
+    }
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
+}
+
+function extractOutputText(data) {
+  if (typeof data.output_text === "string") {
+    return data.output_text;
+  }
+
+  const output = Array.isArray(data.output) ? data.output : [];
+  for (const item of output) {
+    const content = Array.isArray(item.content) ? item.content : [];
+    for (const part of content) {
+      if (typeof part.text === "string") {
+        return part.text;
+      }
+    }
+  }
+
+  return "";
+}
+
+async function handleOpenAiProxy(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method Not Allowed" });
+    return;
+  }
+
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch (error) {
+    sendJson(response, 400, { error: "Invalid JSON request body" });
+    return;
+  }
+
+  const apiKey = typeof payload.apiKey === "string" ? payload.apiKey.trim() : "";
+  const model = typeof payload.model === "string" && payload.model.trim() ? payload.model.trim() : "gpt-4.1-mini";
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  const schema = payload.schema && typeof payload.schema === "object" ? payload.schema : null;
+  const task = typeof payload.task === "string" && payload.task.trim() ? payload.task.trim() : "ai_task";
+
+  if (!apiKey) {
+    sendJson(response, 400, { error: "OpenAI API key is required" });
+    return;
+  }
+  if (!prompt || !schema) {
+    sendJson(response, 400, { error: "Prompt and JSON schema are required" });
+    return;
+  }
+
+  try {
+    const openAiResponse = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: "system",
+            content: "あなたは日本語の就職・研究面接練習コーチです。出力は指定されたJSON Schemaに厳密に従ってください。"
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: task.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 64) || "ai_task",
+            strict: true,
+            schema
+          }
+        }
+      })
+    });
+
+    const data = await openAiResponse.json().catch(() => ({}));
+    if (!openAiResponse.ok) {
+      sendJson(response, openAiResponse.status, {
+        error: data.error && data.error.message ? data.error.message : "OpenAI API request failed"
+      });
+      return;
+    }
+
+    const text = extractOutputText(data);
+    if (!text) {
+      sendJson(response, 502, { error: "OpenAI response did not include output text" });
+      return;
+    }
+
+    try {
+      sendJson(response, 200, { result: JSON.parse(text) });
+    } catch (error) {
+      sendJson(response, 502, { error: "OpenAI response was not valid JSON", raw: text });
+    }
+  } catch (error) {
+    sendJson(response, 502, { error: error && error.message ? error.message : "OpenAI proxy failed" });
+  }
+}
+
 function resolveRequestPath(urlPath) {
   const decodedPath = decodeURIComponent(urlPath.split("?")[0] || "/");
   const relativePath = decodedPath === "/" ? "index.html" : decodedPath.replace(/^\/+/, "");
@@ -42,6 +164,12 @@ function resolveRequestPath(urlPath) {
 }
 
 const server = createServer((request, response) => {
+  const urlPath = (request.url || "/").split("?")[0] || "/";
+  if (urlPath === "/api/openai") {
+    handleOpenAiProxy(request, response);
+    return;
+  }
+
   if (request.method !== "GET" && request.method !== "HEAD") {
     sendText(response, 405, "Method Not Allowed");
     return;

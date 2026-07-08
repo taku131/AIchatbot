@@ -6,16 +6,24 @@
   var COMPANY_STORAGE_KEY = "aiInterviewPrototype.companies";
   var ES_STORAGE_KEY = "aiInterviewPrototype.esEntries";
   var ACTIVE_ACCOUNT_STORAGE_KEY = "aiInterviewPrototype.activeAccountId";
+  var AI_SETTINGS_KEY = "aiInterviewPrototype.openAiSettings";
+  var AI_SESSION_KEY = "aiInterviewPrototype.openAiSessionKey";
 
   var DEFAULT_SETTINGS = {
     company: "",
     role: "",
     interviewType: "first",
-    targetType: "",
+    targetType: "new-graduate",
     category: "self_pr",
     interviewerType: "friendly",
     questionCount: 5,
     userProfile: ""
+  };
+
+  var DEFAULT_AI_SETTINGS = {
+    mode: "mock",
+    model: "gpt-4.1-mini",
+    rememberApiKey: false
   };
 
   var EVALUATION_AXES = [
@@ -25,84 +33,93 @@
     "一貫性",
     "企業理解",
     "職種理解",
-    "自分の経験との接続",
-    "深掘りへの耐性",
+    "経験との接続",
+    "深掘り耐性",
     "話の分かりやすさ",
     "改善余地"
   ];
+
+  var CATEGORY_LABELS = {
+    self_pr: "自己PR",
+    motivation: "志望動機",
+    student_life: "ガクチカ",
+    strength_weakness: "長所・短所",
+    research: "研究内容",
+    development: "開発経験",
+    team: "チーム経験",
+    failure: "失敗経験",
+    career: "キャリア",
+    reverse_question: "逆質問",
+    default: "その他"
+  };
+
+  var STATUS_LABELS = {
+    draft: "下書き",
+    reviewing: "推敲中",
+    submitted: "提出済み",
+    practice: "練習対象"
+  };
+
+  var INTERVIEW_TYPE_LABELS = {
+    first: "一次面接",
+    final: "最終面接",
+    deep_dive: "深掘り面接",
+    technical: "技術面接",
+    research: "研究面接",
+    intern: "インターン面接",
+    hr: "人事面接"
+  };
 
   var questionBank = {
     self_pr: [
       "あなたの強みを、応募先でどのように活かせるかを含めて教えてください。",
       "これまで最も成果を出した経験について、背景と行動を具体的に説明してください。",
-      "周囲からどのような人だと言われますか。その理由も含めて教えてください。",
-      "あなたらしさが最も表れた経験を一つ挙げてください。"
+      "周囲からどのような人だと言われますか。その理由も含めて教えてください。"
     ],
     motivation: [
       "当社を志望する理由を、事業や職種との接点を含めて教えてください。",
       "この業界を選んだ理由と、その中で当社に関心を持った理由を教えてください。",
-      "入社後に実現したいことを、具体的な役割と結び付けて説明してください。",
-      "他社ではなく当社を選ぶ理由は何ですか。"
+      "入社後に実現したいことを、具体的な役割と結びつけて説明してください。"
     ],
     student_life: [
       "学生時代に最も力を入れたことを教えてください。",
-      "チームで取り組んだ経験と、その中でのあなたの役割を教えてください。",
       "困難に直面した経験と、そこから学んだことを説明してください。",
-      "継続して取り組んできたことと、その成果を教えてください。"
-    ],
-    career: [
-      "これまでの経験を踏まえ、今後どのようなキャリアを築きたいですか。",
-      "希望職種で成果を出すために、今のあなたに足りない力は何だと思いますか。",
-      "3年後にどのような状態になっていたいですか。",
-      "仕事で大切にしたい価値観を教えてください。"
-    ],
-    weakness: [
-      "あなたの弱みと、それを改善するために取り組んでいることを教えてください。",
-      "失敗経験を一つ挙げ、原因と改善策を説明してください。",
-      "苦手なタイプの人と協働する際、どのように対応しますか。",
-      "最近受けた指摘やフィードバックから、何を改善しましたか。"
+      "チームで取り組んだ経験と、その中でのあなたの役割を教えてください。"
     ],
     strength_weakness: [
       "あなたの長所と短所を、それぞれ具体的な経験と合わせて説明してください。",
-      "短所が出やすい場面と、それを補うために意識している行動を教えてください。",
-      "周囲から評価される強みと、今後改善したい点を一つずつ教えてください。",
-      "長所を応募先の仕事でどう活かし、短所をどう管理しますか。"
+      "短所が出やすい場面と、それを補うために意識している行動を教えてください。"
     ],
     research: [
       "研究テーマの概要を、専門外の面接官にも分かるように説明してください。",
-      "なぜその研究テーマを選んだのか、背景と課題意識を教えてください。",
-      "既存手法と比べて、あなたの研究の違いや工夫は何ですか。",
-      "実験結果や考察から何が言えるのか、限界も含めて説明してください。"
+      "研究の新規性や工夫した点を教えてください。",
+      "実験や検証で苦労した点と、その乗り越え方を説明してください。"
     ],
     development: [
-      "開発経験の中で、技術的に最も苦労した点と解決方法を教えてください。",
+      "開発経験の中で、技術的に最も工夫した点を教えてください。",
       "担当した機能、使用技術、あなたの役割を具体的に説明してください。",
-      "設計や実装で工夫した点を、なぜその方法にしたのかを含めて説明してください。",
-      "その開発経験を希望職種でどのように活かせますか。"
+      "設計や実装で迷った点と、最終的な判断理由を教えてください。"
     ],
     team: [
-      "チームで取り組んだ経験について、あなたの役割と貢献を教えてください。",
-      "意見が割れた場面で、どのように合意形成しましたか。",
-      "チームの成果を高めるために、自分から働きかけたことは何ですか。",
-      "チーム経験から学んだことを、入社後どう活かしますか。"
+      "チームで成果を出した経験について、あなたの役割と貢献を教えてください。",
+      "意見が割れた場面で、どのように合意形成しましたか。"
     ],
     failure: [
       "失敗経験を一つ挙げ、原因、対応、学びを順番に説明してください。",
-      "その失敗を繰り返さないために、今はどのような行動を取っていますか。",
-      "失敗したとき、周囲にどのように共有し、立て直しましたか。",
-      "その経験は、希望職種で働くうえでどのように活きますか。"
+      "その失敗を繰り返さないために、今はどのような行動を取っていますか。"
+    ],
+    career: [
+      "これまでの経験を踏まえ、今後どのようなキャリアを築きたいですか。",
+      "3年後にどのような状態になっていたいですか。"
     ],
     reverse_question: [
       "面接官に確認したい逆質問を一つ挙げ、その意図も説明してください。",
-      "企業理解を深めるために、どのような質問をしますか。",
-      "希望職種で成果を出すために、入社前に確認したいことは何ですか。",
-      "逆質問を通じて、自分の関心や強みをどう伝えますか。"
+      "企業理解を深めるために、どのような質問をしますか。"
     ],
     default: [
       "自己紹介を1分程度でお願いします。",
-      "あなたが面接で最も伝えたいことは何ですか。",
-      "これまでの経験の中で、応募先に最も関連するものを教えてください。",
-      "最後に、面接官へ特に伝えておきたいことはありますか。"
+      "面接で最も伝えたいことは何ですか。",
+      "これまでの経験の中で、応募先に最も関連するものを教えてください。"
     ]
   };
 
@@ -115,7 +132,9 @@
     selectedHistoryId: null,
     activeAccountId: null,
     selectedCompanyId: null,
-    pendingSourceEsEntry: null
+    pendingSourceEsEntry: null,
+    pendingEsAnalysis: null,
+    isBusy: false
   };
 
   var voiceInputState = {
@@ -133,18 +152,12 @@
 
   function getValue(id, fallback) {
     var element = $(id);
-    if (!element || typeof element.value === "undefined") {
-      return fallback || "";
-    }
-    return String(element.value || "").trim();
+    return element && typeof element.value !== "undefined" ? String(element.value || "").trim() : (fallback || "");
   }
 
   function getRawValue(id, fallback) {
     var element = $(id);
-    if (!element || typeof element.value === "undefined") {
-      return fallback || "";
-    }
-    return String(element.value || "");
+    return element && typeof element.value !== "undefined" ? String(element.value || "") : (fallback || "");
   }
 
   function setValue(id, value) {
@@ -161,26 +174,6 @@
     }
   }
 
-  function clearElement(id) {
-    var element = $(id);
-    if (element) {
-      element.textContent = "";
-    }
-  }
-
-  function appendListItems(id, items) {
-    var element = $(id);
-    if (!element) {
-      return;
-    }
-    element.textContent = "";
-    (items || []).forEach(function (item) {
-      var li = document.createElement("li");
-      li.textContent = item;
-      element.appendChild(li);
-    });
-  }
-
   function on(id, eventName, handler) {
     var element = $(id);
     if (element && typeof element.addEventListener === "function") {
@@ -188,207 +181,9 @@
     }
   }
 
-  function getSpeechRecognitionConstructor() {
-    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
-  }
-
-  function getVoiceErrorMessage(errorName) {
-    var messages = {
-      "not-allowed": "マイクの使用が許可されていません。ブラウザの権限設定を確認してください。",
-      "service-not-allowed": "音声認識サービスの使用が許可されていません。",
-      "no-speech": "音声を検出できませんでした。もう一度お試しください。",
-      "audio-capture": "マイクを利用できません。接続や入力デバイスを確認してください。",
-      "network": "ネットワークエラーで音声認識を利用できませんでした。",
-      "aborted": "音声入力を中断しました。"
-    };
-    return messages[errorName] || "音声入力でエラーが発生しました。もう一度お試しください。";
-  }
-
-  function joinVoiceText(baseText, transcript) {
-    var safeBase = String(baseText || "");
-    var safeTranscript = String(transcript || "").trim();
-    if (!safeTranscript) {
-      return safeBase;
-    }
-    if (!safeBase) {
-      return safeTranscript;
-    }
-    return safeBase + (/[\s\n]$/.test(safeBase) ? "" : "\n") + safeTranscript;
-  }
-
-  function setAnswerInputFromVoice() {
-    var answerInput = $("answerInput");
-    if (!answerInput || typeof answerInput.value === "undefined") {
-      return;
-    }
-    answerInput.value = joinVoiceText(voiceInputState.baseAnswer, voiceInputState.finalTranscript);
-    if (typeof answerInput.dispatchEvent === "function") {
-      answerInput.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  }
-
-  function updateVoiceInputButtons() {
-    var startButton = $("startVoiceInputBtn");
-    var stopButton = $("stopVoiceInputBtn");
-    if (startButton) {
-      startButton.disabled = !voiceInputState.isSupported || voiceInputState.isListening;
-    }
-    if (stopButton) {
-      stopButton.disabled = !voiceInputState.isSupported || !voiceInputState.isListening;
-    }
-  }
-
-  function setVoiceUiState(state) {
-    var panel = document.querySelector(".voice-input-panel");
-    var status = $("voiceStatus");
-    var preview = $("voiceTranscriptPreview");
-    [panel, status, preview].forEach(function (element) {
-      if (!element || !element.classList) {
-        return;
-      }
-      element.classList.remove("is-listening", "is-error");
-      if (state) {
-        element.classList.add(state);
-      }
-    });
-  }
-
-  function handleVoiceResult(event) {
-    var finalTranscript = "";
-    var interimTranscript = "";
-    var results = event && event.results ? event.results : [];
-
-    for (var i = 0; i < results.length; i += 1) {
-      var result = results[i];
-      var transcript = result && result[0] ? result[0].transcript : "";
-      if (result && result.isFinal) {
-        finalTranscript += transcript;
-      } else {
-        interimTranscript += transcript;
-      }
-    }
-
-    voiceInputState.finalTranscript = finalTranscript;
-    setAnswerInputFromVoice();
-    setText("voiceTranscriptPreview", interimTranscript.trim());
-  }
-
-  function createVoiceRecognition() {
-    var Recognition = getSpeechRecognitionConstructor();
-    if (!Recognition) {
-      return null;
-    }
-
-    var recognition = new Recognition();
-    recognition.lang = "ja-JP";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = function () {
-      voiceInputState.isListening = true;
-      voiceInputState.lastError = "";
-      setText("voiceStatus", "音声入力中です。話した内容を回答欄に反映します。");
-      setVoiceUiState("is-listening");
-      updateVoiceInputButtons();
-    };
-
-    recognition.onresult = handleVoiceResult;
-
-    recognition.onerror = function (event) {
-      voiceInputState.lastError = event && event.error ? event.error : "unknown";
-      setText("voiceStatus", getVoiceErrorMessage(voiceInputState.lastError));
-      voiceInputState.isListening = false;
-      setVoiceUiState("is-error");
-      updateVoiceInputButtons();
-    };
-
-    recognition.onend = function () {
-      voiceInputState.isListening = false;
-      setText("voiceTranscriptPreview", "");
-      if (!voiceInputState.lastError) {
-        setText("voiceStatus", "音声入力を停止しました。");
-        setVoiceUiState("");
-      }
-      updateVoiceInputButtons();
-    };
-
-    return recognition;
-  }
-
-  function setupVoiceInput() {
-    voiceInputState.isSupported = Boolean(getSpeechRecognitionConstructor());
-    voiceInputState.recognition = voiceInputState.isSupported ? createVoiceRecognition() : null;
-
-    if (!voiceInputState.isSupported) {
-      setText("voiceStatus", "このブラウザは音声入力に対応していません。Chrome など Web Speech API 対応ブラウザをご利用ください。");
-      setText("voiceTranscriptPreview", "");
-      setVoiceUiState("is-error");
-    } else {
-      setText("voiceStatus", "音声入力を開始できます。");
-      setVoiceUiState("");
-    }
-    updateVoiceInputButtons();
-  }
-
-  function startVoiceInput(event) {
-    if (event && typeof event.preventDefault === "function") {
-      event.preventDefault();
-    }
-    if (!voiceInputState.isSupported || voiceInputState.isListening) {
-      updateVoiceInputButtons();
-      return;
-    }
-    if (!voiceInputState.recognition) {
-      voiceInputState.recognition = createVoiceRecognition();
-    }
-
-    var answerInput = $("answerInput");
-    voiceInputState.baseAnswer = answerInput && typeof answerInput.value === "string" ? answerInput.value : "";
-    voiceInputState.finalTranscript = "";
-    voiceInputState.lastError = "";
-    setText("voiceTranscriptPreview", "");
-    setText("voiceStatus", "音声入力を開始しています...");
-    setVoiceUiState("is-listening");
-
-    try {
-      voiceInputState.recognition.start();
-    } catch (error) {
-      voiceInputState.lastError = error && error.name ? error.name : "unknown";
-      voiceInputState.isListening = false;
-      setText("voiceStatus", "音声入力を開始できませんでした。少し待ってから再試行してください。");
-      setVoiceUiState("is-error");
-      updateVoiceInputButtons();
-    }
-  }
-
-  function stopVoiceInput(event) {
-    if (event && typeof event.preventDefault === "function") {
-      event.preventDefault();
-    }
-    if (!voiceInputState.recognition || !voiceInputState.isListening) {
-      voiceInputState.isListening = false;
-      updateVoiceInputButtons();
-      return;
-    }
-    setText("voiceStatus", "音声入力を停止しています...");
-    voiceInputState.recognition.stop();
-  }
-
-  function showView(viewId) {
-    var nextViewId = (!appState.activeAccountId && viewId !== "accountView") ? "accountView" : viewId;
-    ["accountView", "workspaceView", "setupView", "interviewView", "feedbackView", "historyView"].forEach(function (id) {
-      var element = $(id);
-      if (element) {
-        element.hidden = id !== nextViewId;
-      }
-    });
-  }
-
   function loadCollection(key) {
     try {
-      var raw = localStorage.getItem(key);
-      var parsed = raw ? JSON.parse(raw) : [];
+      var parsed = JSON.parse(localStorage.getItem(key) || "[]");
       return Array.isArray(parsed) ? parsed : [];
     } catch (error) {
       console.warn("Failed to load local collection:", key, error);
@@ -412,6 +207,28 @@
 
   function nowIso() {
     return new Date().toISOString();
+  }
+
+  function normalizeCategory(value) {
+    var aliases = {
+      "self-pr": "self_pr",
+      general: "default",
+      experience: "student_life",
+      stress: "strength_weakness"
+    };
+    return aliases[value] || value || DEFAULT_SETTINGS.category;
+  }
+
+  function formatCategoryLabel(value) {
+    return CATEGORY_LABELS[normalizeCategory(value)] || CATEGORY_LABELS.default;
+  }
+
+  function formatStatusLabel(value) {
+    return STATUS_LABELS[value] || "未設定";
+  }
+
+  function formatInterviewTypeLabel(value) {
+    return INTERVIEW_TYPE_LABELS[value] || "面接";
   }
 
   function loadAccounts() {
@@ -438,10 +255,17 @@
     return saveCollection(ES_STORAGE_KEY, entries);
   }
 
+  function loadInterviewLogs() {
+    return loadCollection(STORAGE_KEY);
+  }
+
+  function saveInterviewLogs(logs) {
+    return saveCollection(STORAGE_KEY, logs);
+  }
+
   function getActiveAccount() {
-    var id = appState.activeAccountId;
     return loadAccounts().find(function (account) {
-      return account.id === id;
+      return account.id === appState.activeAccountId;
     }) || null;
   }
 
@@ -457,70 +281,14 @@
     });
   }
 
-  function getSelectedCompany() {
-    var companyId = appState.selectedCompanyId;
-    if (!companyId) {
-      return null;
-    }
-    return findCompany(companyId, appState.activeAccountId);
-  }
-
   function findCompany(companyId, accountId) {
-    if (!companyId) {
-      return null;
-    }
     return loadCompanies().find(function (company) {
       return company.id === companyId && (!accountId || company.accountId === accountId);
     }) || null;
   }
 
-  function getCompanyName(companyId, fallback) {
-    var company = findCompany(companyId, appState.activeAccountId);
-    return company ? company.companyName : fallback;
-  }
-
-  function applyCompanyToSetup(company) {
-    if (!company) {
-      return;
-    }
-    setValue("companyInput", company.companyName || "");
-    setValue("roleInput", company.role || "");
-  }
-
-  function renderSourceEsPreview(source) {
-    var preview = $("sourceEsPreview");
-    if (!preview) {
-      return;
-    }
-    var entry = source || appState.pendingSourceEsEntry;
-    preview.hidden = !entry;
-    if (!entry) {
-      setText("sourceEsPreviewTitle", "使用するES");
-      setText("sourceEsPreviewQuestion", "");
-      setText("sourceEsPreviewAnswer", "");
-      return;
-    }
-    setText("sourceEsPreviewTitle", formatCategoryLabel(entry.category) + " / " + (getCompanyName(entry.companyId, "企業未設定") || "企業未設定"));
-    setText("sourceEsPreviewQuestion", "設問: " + (entry.questionText || "未入力"));
-    setText("sourceEsPreviewAnswer", "回答: " + (entry.answerText || "未入力"));
-  }
-
-  function buildProfileWithSourceEs(entry) {
-    var existingProfile = getValue("userProfileInput", "");
-    var marker = "使用ES:";
-    var baseProfile = existingProfile.split(marker)[0].trim();
-    var parts = [];
-
-    if (baseProfile) {
-      parts.push(baseProfile);
-    }
-    parts.push([
-      marker,
-      "ES設問: " + (entry.questionText || ""),
-      "ES回答: " + (entry.answerText || "")
-    ].join("\n"));
-
-    return parts.filter(Boolean).join("\n\n");
+  function getSelectedCompany() {
+    return findCompany(appState.selectedCompanyId, appState.activeAccountId);
   }
 
   function rememberActiveAccount(accountId) {
@@ -536,45 +304,49 @@
     }
   }
 
+  function showView(viewId) {
+    var nextViewId = (!appState.activeAccountId && viewId !== "accountView" && viewId !== "settingsView") ? "accountView" : viewId;
+    ["accountView", "settingsView", "workspaceView", "setupView", "interviewView", "feedbackView", "historyView"].forEach(function (id) {
+      var element = $(id);
+      if (element) {
+        element.hidden = id !== nextViewId;
+      }
+    });
+  }
+
   function renderAccounts() {
     var list = $("accountList");
     var accounts = loadAccounts().sort(function (a, b) {
       return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
     });
 
-    if (list) {
-      list.textContent = "";
-      if (!accounts.length) {
-        var empty = document.createElement("p");
-        empty.className = "empty-state";
-        empty.textContent = "作成済みアカウントがここに表示されます。";
-        list.appendChild(empty);
-      }
-      accounts.forEach(function (account) {
-        var item = document.createElement("div");
-        var button = document.createElement("button");
-        button.type = "button";
-        button.className = "account-item" + (account.id === appState.activeAccountId ? " is-selected" : "");
-        button.dataset.accountId = account.id;
-        button.dataset.action = "select-account";
-        button.textContent = account.displayName + (account.email ? " / " + account.email : "");
-        item.appendChild(button);
-        list.appendChild(item);
-      });
+    if (!list) {
+      return;
     }
-
-    var accountView = $("accountView");
-    if (accountView && !$("googleAccountNote")) {
-      var note = document.createElement("p");
-      note.id = "googleAccountNote";
-      note.textContent = "Google連携は未実装です。このプロトタイプではローカル保存のみを使用します。";
-      accountView.appendChild(note);
+    list.textContent = "";
+    if (!accounts.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "作成済みアカウントはまだありません。";
+      list.appendChild(empty);
+      return;
     }
+    accounts.forEach(function (account) {
+      var item = document.createElement("div");
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "account-item" + (account.id === appState.activeAccountId ? " is-selected" : "");
+      button.dataset.accountId = account.id;
+      button.dataset.action = "select-account";
+      button.textContent = account.displayName + (account.email ? " / " + account.email : "");
+      item.appendChild(button);
+      list.appendChild(item);
+    });
   }
 
   function renderWorkspace() {
     var account = getActiveAccount();
-    setText("activeAccountName", account ? account.displayName : "");
+    setText("activeAccountName", account ? account.displayName : "未選択");
     renderCompanies();
     renderEsEntries();
     updateEsCharCount();
@@ -609,7 +381,6 @@
         button.type = "button";
         button.className = "company-item" + (company.id === appState.selectedCompanyId ? " is-selected" : "");
         button.dataset.companyId = company.id;
-        button.dataset.accountId = company.accountId;
         button.dataset.action = "select-company";
         title.className = "company-card-title";
         title.textContent = company.companyName || "企業名未設定";
@@ -641,21 +412,18 @@
     if (!list) {
       return;
     }
-
     list.textContent = "";
     if (!entries.length) {
       var empty = document.createElement("p");
       empty.className = "empty-state";
-      empty.textContent = companyId ? "この企業のES設問はまだ保存されていません。" : "企業を選択し、ES設問を保存するとここに表示されます。";
+      empty.textContent = companyId ? "この企業のESはまだ保存されていません。" : "企業を選択してESを保存してください。";
       list.appendChild(empty);
       return;
     }
+
     entries.forEach(function (entry) {
       var item = document.createElement("article");
       item.className = "es-entry-item";
-      item.dataset.esEntryId = entry.id;
-      item.dataset.companyId = entry.companyId;
-      item.dataset.accountId = entry.accountId;
 
       var title = document.createElement("p");
       title.className = "item-title";
@@ -667,22 +435,58 @@
       meta.textContent = [
         formatCategoryLabel(entry.category),
         formatStatusLabel(entry.status),
-        String(entry.answerText || "").length + (entry.maxChars ? " / " + entry.maxChars : "") + "文字"
+        String(entry.answerText || "").length + (entry.maxChars ? " / " + entry.maxChars : "") + "文字",
+        entry.aiAnalysis ? "AI分析済み" : ""
       ].filter(Boolean).join(" / ");
       item.appendChild(meta);
+
+      if (entry.aiAnalysis) {
+        var analysisSummary = document.createElement("p");
+        analysisSummary.className = "item-meta";
+        analysisSummary.textContent = "分析: " + entry.aiAnalysis.intent + " / 改善方針: " + entry.aiAnalysis.improvedDirection;
+        item.appendChild(analysisSummary);
+      }
+
+      var actions = document.createElement("div");
+      actions.className = "form-actions";
 
       var useButton = document.createElement("button");
       useButton.type = "button";
       useButton.className = "button button-secondary button-small";
       useButton.dataset.esEntryId = entry.id;
-      useButton.dataset.companyId = entry.companyId;
-      useButton.dataset.accountId = entry.accountId;
       useButton.dataset.action = "use-es-entry";
       useButton.textContent = "このESで面接練習";
-      item.appendChild(useButton);
+      actions.appendChild(useButton);
 
+      var analyzeButton = document.createElement("button");
+      analyzeButton.type = "button";
+      analyzeButton.className = "button button-ghost button-small";
+      analyzeButton.dataset.esEntryId = entry.id;
+      analyzeButton.dataset.action = "analyze-es-entry";
+      analyzeButton.textContent = "AI分析";
+      actions.appendChild(analyzeButton);
+
+      item.appendChild(actions);
       list.appendChild(item);
     });
+  }
+
+  function renderAiSettings() {
+    var settings = loadAiSettings();
+    setValue("openAiApiKeyInput", settings.apiKey || "");
+    setValue("openAiModelInput", settings.model || DEFAULT_AI_SETTINGS.model);
+    setValue("aiModeSelect", settings.mode || DEFAULT_AI_SETTINGS.mode);
+    var remember = $("rememberApiKeyInput");
+    if (remember) {
+      remember.checked = Boolean(settings.rememberApiKey);
+    }
+    updateAiStatus();
+  }
+
+  function updateAiStatus() {
+    var settings = loadAiSettings();
+    var enabled = isOpenAiEnabled(settings);
+    setText("aiStatusBadge", enabled ? "AI: OpenAI有効" : "AI: モック");
   }
 
   function createAccount(event) {
@@ -692,11 +496,10 @@
     var displayName = getValue("accountNameInput", "");
     var email = getValue("accountEmailInput", "");
     if (!displayName) {
-      setText("activeAccountName", "表示名を入力してください");
+      setText("googleAccountNote", "表示名を入力してください。");
       return;
     }
 
-    var accounts = loadAccounts();
     var timestamp = nowIso();
     var account = {
       id: makeId("acct"),
@@ -705,6 +508,7 @@
       createdAt: timestamp,
       updatedAt: timestamp
     };
+    var accounts = loadAccounts();
     accounts.unshift(account);
     saveAccounts(accounts);
     setValue("accountNameInput", "");
@@ -720,7 +524,6 @@
       rememberActiveAccount(null);
       appState.selectedCompanyId = null;
       appState.pendingSourceEsEntry = null;
-      renderSourceEsPreview(null);
       renderAccounts();
       renderWorkspace();
       showView("accountView");
@@ -731,7 +534,6 @@
     var companies = getAccountCompanies(account.id);
     appState.selectedCompanyId = companies.length ? companies[0].id : null;
     appState.pendingSourceEsEntry = null;
-    renderSourceEsPreview(null);
     renderAccounts();
     renderWorkspace();
     showView("workspaceView");
@@ -802,6 +604,7 @@
       maxChars: Number.isFinite(maxChars) && maxChars > 0 ? maxChars : null,
       category: normalizeCategory(getValue("esCategorySelect", DEFAULT_SETTINGS.category)),
       status: getValue("esStatusSelect", "draft") || "draft",
+      aiAnalysis: appState.pendingEsAnalysis || null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -809,6 +612,8 @@
     var entries = loadEsEntries();
     entries.unshift(entry);
     saveEsEntries(entries);
+    appState.pendingEsAnalysis = null;
+    renderEsAnalysis(null);
     setValue("esQuestionInput", "");
     setValue("esAnswerInput", "");
     updateEsCharCount();
@@ -838,9 +643,7 @@
   }
 
   function selectCompany(companyId) {
-    var company = loadCompanies().find(function (item) {
-      return item.id === companyId && item.accountId === appState.activeAccountId;
-    });
+    var company = findCompany(companyId, appState.activeAccountId);
     if (!company) {
       return;
     }
@@ -871,6 +674,7 @@
       maxChars: entry.maxChars,
       category: entry.category,
       status: entry.status,
+      aiAnalysis: entry.aiAnalysis || null,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt
     };
@@ -881,11 +685,9 @@
     if (company.id) {
       appState.selectedCompanyId = company.id;
     }
-
     applyCompanyToSetup(company);
     setValue("categorySelect", normalizeCategory(entry.category || DEFAULT_SETTINGS.category));
     setValue("userProfileInput", buildProfileWithSourceEs(entry));
-
     appState.pendingSourceEsEntry = summarizeSourceEsEntry(entry);
     renderCompanies();
     renderEsEntries();
@@ -895,192 +697,384 @@
 
   function useEsEntry(entryId) {
     var entry = findEsEntry(entryId);
-    if (!entry) {
+    if (entry) {
+      applyEsEntryToSettings(entry);
+    }
+  }
+
+  function applyCompanyToSetup(company) {
+    if (!company) {
       return;
     }
-    applyEsEntryToSettings(entry);
+    setValue("companyInput", company.companyName || "");
+    setValue("roleInput", company.role || "");
   }
 
-  function normalizeChoice(value, fallback) {
-    return value || fallback;
-  }
-
-  function normalizeCategory(value) {
-    var aliases = {
-      "self-pr": "self_pr",
-      general: "default",
-      experience: "student_life",
-      stress: "weakness"
-    };
-    return aliases[value] || value || DEFAULT_SETTINGS.category;
-  }
-
-  function formatCategoryLabel(value) {
-    var labels = {
-      self_pr: "自己PR",
-      motivation: "志望動機",
-      student_life: "ガクチカ",
-      strength_weakness: "長所・短所",
-      research: "研究内容",
-      development: "開発経験",
-      team: "チーム経験",
-      failure: "失敗経験",
-      career: "キャリア",
-      reverse_question: "逆質問",
-      default: "その他"
-    };
-    return labels[normalizeCategory(value)] || "その他";
-  }
-
-  function formatStatusLabel(value) {
-    var labels = {
-      draft: "下書き",
-      reviewing: "推敲中",
-      submitted: "提出済み",
-      practice: "練習対象"
-    };
-    return labels[value] || "下書き";
-  }
-
-  function formatInterviewTypeLabel(value) {
-    var labels = {
-      first: "一次面接",
-      final: "最終面接",
-      deep_dive: "深掘り面接",
-      technical: "技術面接",
-      research: "研究面接",
-      intern: "インターン面接",
-      hr: "人事面接"
-    };
-    return labels[value] || value || "面接タイプ未設定";
-  }
-
-  function getLogCompanyName(log) {
-    var settings = log.settings || {};
-    var company = findCompany(log.companyId || settings.companyId, log.accountId || settings.accountId);
-    return company ? company.companyName : (settings.company || "企業未設定");
-  }
-
-  function getLogSourceEsEntry(log) {
-    var settings = log.settings || {};
-    if (settings.sourceEsEntry) {
-      return settings.sourceEsEntry;
+  function buildProfileWithSourceEs(entry) {
+    var lines = [];
+    if (entry.aiAnalysis) {
+      lines.push("AI分析メモ:");
+      lines.push("設問意図: " + entry.aiAnalysis.intent);
+      lines.push("主張: " + entry.aiAnalysis.mainClaim);
+      lines.push("改善方針: " + entry.aiAnalysis.improvedDirection);
     }
-    var entryId = log.esEntryId || settings.esEntryId;
-    if (!entryId) {
-      return null;
-    }
-    return loadEsEntries().find(function (entry) {
-      return entry.id === entryId;
-    }) || null;
+    lines.push("ES設問: " + (entry.questionText || ""));
+    lines.push("ES回答: " + (entry.answerText || ""));
+    return lines.join("\n");
   }
 
-  function getLogEntries(log) {
-    if (log && Array.isArray(log.entries) && log.entries.length) {
-      return log.entries;
+  function renderSourceEsPreview(entry) {
+    var preview = $("sourceEsPreview");
+    if (!preview) {
+      return;
     }
-    var messages = log && Array.isArray(log.messages) ? log.messages : [];
-    var evaluations = log && Array.isArray(log.evaluations) ? log.evaluations : [];
-    return messages.map(function (message) {
-      var evaluation = evaluations.find(function (item) {
-        return item.messageId === message.id || item.questionNumber === message.questionNumber;
-      }) || null;
-      return {
-        id: message.id,
-        questionNumber: message.questionNumber,
-        question: message.question,
-        answer: message.answer,
-        evaluation: evaluation
-      };
-    });
+    preview.hidden = !entry;
+    if (!entry) {
+      setText("sourceEsPreviewQuestion", "");
+      setText("sourceEsPreviewAnswer", "");
+      return;
+    }
+    setText("sourceEsPreviewQuestion", "設問: " + (entry.questionText || "未入力"));
+    setText("sourceEsPreviewAnswer", "回答: " + (entry.answerText || "未入力"));
   }
 
   function readSettings() {
-    var count = parseInt(getValue("questionCountSelect", DEFAULT_SETTINGS.questionCount), 10);
-    var source = appState.pendingSourceEsEntry;
-    var selectedCompany = getSelectedCompany();
-    if (!Number.isFinite(count) || count < 1) {
-      count = DEFAULT_SETTINGS.questionCount;
-    }
-
     return {
-      accountId: appState.activeAccountId || null,
-      companyId: source && source.companyId ? source.companyId : (selectedCompany ? selectedCompany.id : null),
-      esEntryId: source && source.id ? source.id : null,
-      company: getValue("companyInput", DEFAULT_SETTINGS.company),
-      role: getValue("roleInput", DEFAULT_SETTINGS.role),
-      interviewType: normalizeChoice(getValue("interviewTypeSelect", DEFAULT_SETTINGS.interviewType), DEFAULT_SETTINGS.interviewType),
+      accountId: appState.activeAccountId,
+      companyId: appState.selectedCompanyId,
+      company: getValue("companyInput", ""),
+      role: getValue("roleInput", ""),
+      interviewType: getValue("interviewTypeSelect", DEFAULT_SETTINGS.interviewType),
       targetType: getValue("targetTypeSelect", DEFAULT_SETTINGS.targetType),
       category: normalizeCategory(getValue("categorySelect", DEFAULT_SETTINGS.category)),
-      interviewerType: normalizeChoice(getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType), DEFAULT_SETTINGS.interviewerType),
-      questionCount: count,
-      userProfile: getValue("userProfileInput", DEFAULT_SETTINGS.userProfile),
-      sourceEsEntry: source ? summarizeSourceEsEntry(source) : null
+      interviewerType: getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType),
+      questionCount: Math.max(1, parseInt(getValue("questionCountSelect", DEFAULT_SETTINGS.questionCount), 10) || DEFAULT_SETTINGS.questionCount),
+      userProfile: getRawValue("userProfileInput", "")
     };
   }
 
-  function pickFrom(items, seed) {
-    if (!items || items.length === 0) {
-      return "";
+  function loadAiSettings() {
+    var local = {};
+    try {
+      local = JSON.parse(localStorage.getItem(AI_SETTINGS_KEY) || "{}") || {};
+    } catch (error) {
+      local = {};
     }
-    return items[Math.abs(seed) % items.length];
+    var sessionApiKey = "";
+    try {
+      sessionApiKey = sessionStorage.getItem(AI_SESSION_KEY) || "";
+    } catch (error) {
+      sessionApiKey = "";
+    }
+    return Object.assign({}, DEFAULT_AI_SETTINGS, local, {
+      apiKey: local.rememberApiKey ? (local.apiKey || "") : sessionApiKey
+    });
+  }
+
+  function saveAiSettings(settings) {
+    var copy = Object.assign({}, DEFAULT_AI_SETTINGS, settings || {});
+    var apiKey = copy.apiKey || "";
+    var remember = Boolean(copy.rememberApiKey);
+    try {
+      var localCopy = {
+        mode: copy.mode || DEFAULT_AI_SETTINGS.mode,
+        model: copy.model || DEFAULT_AI_SETTINGS.model,
+        rememberApiKey: remember
+      };
+      if (remember && apiKey) {
+        localCopy.apiKey = apiKey;
+        sessionStorage.removeItem(AI_SESSION_KEY);
+      } else {
+        sessionStorage.setItem(AI_SESSION_KEY, apiKey);
+      }
+      localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(localCopy));
+    } catch (error) {
+      console.warn("AI settings could not be saved:", error);
+    }
+    updateAiStatus();
+  }
+
+  function saveAiSettingsFromForm(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    var remember = $("rememberApiKeyInput");
+    saveAiSettings({
+      apiKey: getValue("openAiApiKeyInput", ""),
+      model: getValue("openAiModelInput", DEFAULT_AI_SETTINGS.model),
+      mode: getValue("aiModeSelect", DEFAULT_AI_SETTINGS.mode),
+      rememberApiKey: remember ? remember.checked : false
+    });
+    setText("aiSettingsMessage", "AI設定を保存しました。");
+    renderAiSettings();
+  }
+
+  function clearAiSettings(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    try {
+      sessionStorage.removeItem(AI_SESSION_KEY);
+      localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify({
+        mode: "mock",
+        model: DEFAULT_AI_SETTINGS.model,
+        rememberApiKey: false
+      }));
+    } catch (error) {
+      console.warn("AI settings could not be cleared:", error);
+    }
+    renderAiSettings();
+    setText("aiSettingsMessage", "APIキーを削除し、モックモードに戻しました。");
+  }
+
+  function isOpenAiEnabled(settings) {
+    var current = settings || loadAiSettings();
+    return current.mode === "openai" && Boolean(current.apiKey);
+  }
+
+  function jsonSchema(properties) {
+    return {
+      type: "object",
+      additionalProperties: false,
+      properties: properties,
+      required: Object.keys(properties)
+    };
+  }
+
+  function stringArraySchema() {
+    return {
+      type: "array",
+      items: { type: "string" }
+    };
+  }
+
+  function axisScoreSchema() {
+    var props = {};
+    EVALUATION_AXES.forEach(function (axis) {
+      props[axis] = { type: "number" };
+    });
+    return jsonSchema(props);
+  }
+
+  var schemas = {
+    connection_test: jsonSchema({
+      message: { type: "string" }
+    }),
+    es_analysis: jsonSchema({
+      intent: { type: "string" },
+      mainClaim: { type: "string" },
+      evidence: stringArraySchema(),
+      weaknesses: stringArraySchema(),
+      missingInfo: stringArraySchema(),
+      followUpQuestions: stringArraySchema(),
+      improvedDirection: { type: "string" }
+    }),
+    interview_question: jsonSchema({
+      question: { type: "string" }
+    }),
+    answer_evaluation: jsonSchema({
+      score: { type: "number" },
+      axisScores: axisScoreSchema(),
+      summary: { type: "string" },
+      goodPoints: stringArraySchema(),
+      improvements: stringArraySchema(),
+      issues: stringArraySchema(),
+      deepDiveQuestion: { type: "string" },
+      direction: { type: "string" },
+      revisedAnswerExample: { type: "string" },
+      nextQuestion: { type: "string" }
+    }),
+    final_feedback: jsonSchema({
+      finalScore: { type: "number" },
+      scoreBreakdown: axisScoreSchema(),
+      goodPoints: stringArraySchema(),
+      improvements: stringArraySchema(),
+      deepDiveQuestions: stringArraySchema(),
+      revisionDirection: { type: "string" },
+      nextPracticeList: stringArraySchema()
+    })
+  };
+
+  async function callOpenAi(task, prompt, schema) {
+    var settings = loadAiSettings();
+    if (!isOpenAiEnabled(settings)) {
+      throw new Error("OpenAI APIキーが未設定、またはモックモードです。");
+    }
+    var response = await fetch("/api/openai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        apiKey: settings.apiKey,
+        model: settings.model || DEFAULT_AI_SETTINGS.model,
+        task: task,
+        prompt: prompt,
+        schema: schema
+      })
+    });
+    var data = await response.json().catch(function () {
+      return {};
+    });
+    if (!response.ok || !data.result) {
+      throw new Error(data.error || "OpenAI API request failed");
+    }
+    return data.result;
+  }
+
+  function buildAiContext(settings) {
+    var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
+    var source = safeSettings.sourceEsEntry || null;
+    return [
+      "応募企業: " + (safeSettings.company || "未設定"),
+      "応募職種: " + (safeSettings.role || "未設定"),
+      "面接タイプ: " + formatInterviewTypeLabel(safeSettings.interviewType),
+      "対象区分: " + (safeSettings.targetType || "未設定"),
+      "カテゴリ: " + formatCategoryLabel(safeSettings.category),
+      "面接官タイプ: " + (safeSettings.interviewerType || "未設定"),
+      "自己メモ: " + (safeSettings.userProfile || "未入力"),
+      source ? "ES設問: " + (source.questionText || "") : "",
+      source ? "ES回答: " + (source.answerText || "") : "",
+      source && source.aiAnalysis ? "ES分析: " + JSON.stringify(source.aiAnalysis) : ""
+    ].filter(Boolean).join("\n");
+  }
+
+  async function testAiConnection(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    saveAiSettingsFromForm(event);
+    setText("aiSettingsMessage", "OpenAIへ接続確認中です...");
+    try {
+      var result = await callOpenAi(
+        "connection_test",
+        "接続テストです。日本語で短く成功メッセージを返してください。",
+        schemas.connection_test
+      );
+      setText("aiSettingsMessage", "接続成功: " + result.message);
+    } catch (error) {
+      setText("aiSettingsMessage", "接続失敗: " + error.message);
+    }
+  }
+
+  async function analyzeCurrentEs(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    var entry = {
+      questionText: getValue("esQuestionInput", ""),
+      answerText: getRawValue("esAnswerInput", ""),
+      category: normalizeCategory(getValue("esCategorySelect", DEFAULT_SETTINGS.category)),
+      maxChars: parseInt(getValue("esMaxCharsInput", ""), 10) || null
+    };
+    if (!entry.questionText || !entry.answerText) {
+      renderEsAnalysis({ error: "ES設問と回答本文を入力してください。" });
+      return;
+    }
+    var company = getSelectedCompany();
+    await runEsAnalysis(entry, company, function (analysis) {
+      appState.pendingEsAnalysis = analysis;
+      renderEsAnalysis(analysis);
+    });
+  }
+
+  async function analyzeSavedEs(entryId) {
+    var entry = findEsEntry(entryId);
+    if (!entry) {
+      return;
+    }
+    var company = findCompany(entry.companyId, entry.accountId);
+    await runEsAnalysis(entry, company, function (analysis) {
+      var entries = loadEsEntries();
+      entries = entries.map(function (item) {
+        return item.id === entry.id ? Object.assign({}, item, { aiAnalysis: analysis, updatedAt: nowIso() }) : item;
+      });
+      saveEsEntries(entries);
+      renderEsAnalysis(analysis);
+      renderEsEntries();
+    });
+  }
+
+  async function runEsAnalysis(entry, company, onSuccess) {
+    var panel = $("esAiAnalysis");
+    if (panel) {
+      panel.hidden = false;
+      panel.textContent = "AIでESを分析中です...";
+    }
+    try {
+      var result = await callOpenAi(
+        "es_analysis",
+        [
+          "以下のESを面接準備用に分析してください。",
+          "企業: " + (company && company.companyName ? company.companyName : "未設定"),
+          "職種: " + (company && company.role ? company.role : "未設定"),
+          "カテゴリ: " + formatCategoryLabel(entry.category),
+          "文字数制限: " + (entry.maxChars || "未設定"),
+          "設問: " + entry.questionText,
+          "回答: " + entry.answerText,
+          "分析は面接で深掘りされる観点を重視してください。"
+        ].join("\n"),
+        schemas.es_analysis
+      );
+      onSuccess(result);
+    } catch (error) {
+      renderEsAnalysis({ error: "AI分析に失敗しました: " + error.message });
+    }
+  }
+
+  function renderEsAnalysis(analysis) {
+    var panel = $("esAiAnalysis");
+    if (!panel) {
+      return;
+    }
+    panel.textContent = "";
+    if (!analysis) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    if (analysis.error) {
+      panel.textContent = analysis.error;
+      return;
+    }
+    var title = document.createElement("h3");
+    title.textContent = "AI分析結果";
+    panel.appendChild(title);
+    [
+      ["設問意図", analysis.intent],
+      ["主張", analysis.mainClaim],
+      ["改善方針", analysis.improvedDirection],
+      ["根拠", (analysis.evidence || []).join(" / ")],
+      ["弱点", (analysis.weaknesses || []).join(" / ")],
+      ["不足情報", (analysis.missingInfo || []).join(" / ")],
+      ["想定深掘り", (analysis.followUpQuestions || []).join(" / ")]
+    ].forEach(function (row) {
+      var p = document.createElement("p");
+      p.textContent = row[0] + ": " + (row[1] || "なし");
+      panel.appendChild(p);
+    });
   }
 
   function textSeed(text) {
-    var seed = 0;
-    String(text || "").split("").forEach(function (char) {
-      seed += char.charCodeAt(0);
-    });
-    return seed;
+    return String(text || "").split("").reduce(function (sum, char) {
+      return sum + char.charCodeAt(0);
+    }, 0);
   }
 
-  function buildContextPrefix(settings) {
-    var parts = [];
-    if (settings.company) {
-      parts.push(settings.company);
-    }
-    if (settings.role) {
-      parts.push(settings.role);
-    }
-    return parts.length ? "【" + parts.join(" / ") + "】" : "";
+  function pickFrom(items, seed) {
+    return items[Math.abs(seed) % items.length];
   }
 
   function makeQuestionSpecific(question, settings) {
-    var prefix = buildContextPrefix(settings);
-    var type = String(settings.interviewType || "");
-    var interviewer = String(settings.interviewerType || "");
-
-    if (type.indexOf("final") !== -1 || type.indexOf("executive") !== -1 || type.indexOf("役員") !== -1) {
-      question += " 経営視点や入社後の貢献も含めて答えてください。";
-    } else if (type.indexOf("technical") !== -1 || type.indexOf("職種") !== -1 || type.indexOf("技術") !== -1) {
-      question += " 職種に必要なスキルや実務での再現性も含めて答えてください。";
-    } else if (type.indexOf("research") !== -1 || type.indexOf("研究") !== -1) {
-      question += " 研究背景、手法、結果、限界を分けて答えてください。";
-    } else if (type.indexOf("deep_dive") !== -1 || type.indexOf("深掘") !== -1) {
-      question += " 面接官が追加で確認できるよう、判断理由と根拠を明確にしてください。";
-    } else if (type.indexOf("intern") !== -1) {
-      question += " インターンで学びたいことや挑戦したいことも含めて答えてください。";
-    } else if (type.indexOf("hr") !== -1 || type.indexOf("人事") !== -1) {
-      question += " 人柄、価値観、周囲との関わり方も含めて答えてください。";
-    } else if (type.indexOf("group") !== -1 || type.indexOf("集団") !== -1) {
-      question += " 簡潔さを意識して、要点を絞って答えてください。";
+    var parts = [question];
+    if (settings.company) {
+      parts.push("応募先の " + settings.company + " との接点も含めてください。");
     }
-
-    if (interviewer.indexOf("strict") !== -1 || interviewer.indexOf("圧迫") !== -1) {
-      question += " 具体的な根拠が弱い場合は追加で確認します。";
-    } else if (interviewer.indexOf("deep_dive") !== -1 || interviewer.indexOf("深掘") !== -1) {
-      question += " 回答後に理由、再現性、別の選択肢を深掘りします。";
-    } else if (interviewer.indexOf("technical") !== -1 || interviewer.indexOf("技術") !== -1) {
-      question += " 技術選定、設計判断、再現性を重視して確認します。";
-    } else if (interviewer.indexOf("research") !== -1 || interviewer.indexOf("研究") !== -1) {
-      question += " 研究の新規性、妥当性、考察を重視して確認します。";
-    } else if (interviewer.indexOf("coach") !== -1) {
-      question += " 回答後に改善しやすい観点も示します。";
-    } else if (interviewer.indexOf("friendly") !== -1 || interviewer.indexOf("優しい") !== -1) {
-      question += " 話しやすい順番で構いません。";
+    if (settings.role) {
+      parts.push(settings.role + " で再現できる力が伝わるように答えてください。");
     }
-
-    return prefix ? prefix + " " + question : question;
+    if (settings.interviewerType === "strict") {
+      parts.push("根拠が弱い場合は追加で確認します。");
+    }
+    return parts.join(" ");
   }
 
   function generateQuestion(settings) {
@@ -1093,14 +1087,7 @@
         ? appState.interviewLog.entries.length
         : 0;
     if (askedCount === 0 && safeSettings.sourceEsEntry) {
-      var source = safeSettings.sourceEsEntry;
-      var esContext = [
-        source.questionText ? "ES設問「" + source.questionText + "」" : "",
-        source.answerText ? "ES回答の要点「" + String(source.answerText).slice(0, 180) + "」" : ""
-      ].filter(Boolean).join(" / ");
-      if (esContext) {
-        return makeQuestionSpecific(esContext + "を踏まえて、まずこのESで伝えた経験を面接で説明してください。ESの丸読みではなく、背景、あなたの役割、行動、結果を自然に補足してください。", safeSettings);
-      }
+      return makeQuestionSpecific("ESに書いた経験について、背景、あなたの役割、行動、結果を面接で説明してください。", safeSettings);
     }
     var seed = textSeed([
       safeSettings.company,
@@ -1113,15 +1100,34 @@
     return makeQuestionSpecific(pickFrom(pool, seed + askedCount), safeSettings);
   }
 
+  async function getInterviewQuestion(settings) {
+    try {
+      var result = await callOpenAi(
+        "interview_question",
+        [
+          "次に面接官が聞く質問を1つだけ作ってください。",
+          "質問は日本語で、回答者が具体的に答えやすい聞き方にしてください。",
+          "既に聞いた質問と重複しないようにしてください。",
+          buildAiContext(settings),
+          "これまでの質問数: " + (appState.interviewLog && appState.interviewLog.entries ? appState.interviewLog.entries.length : 0)
+        ].join("\n"),
+        schemas.interview_question
+      );
+      return result.question || generateQuestion(settings);
+    } catch (error) {
+      console.warn("AI question generation failed. Falling back to mock.", error);
+      return generateQuestion(settings);
+    }
+  }
+
   function scoreAnswer(answer, settings) {
-    var words = String(answer || "").replace(/\s+/g, "");
-    var length = words.length;
-    var hasConclusion = /(結論|理由|まず|最初に|私の強み|志望理由|一つ目|第一に)/.test(answer);
-    var hasSpecifics = /(\d|年|月|人|%|％|件|回|社|チーム|プロジェクト|売上|改善|達成)/.test(answer);
+    var compact = String(answer || "").replace(/\s+/g, "");
+    var length = compact.length;
+    var hasConclusion = /(結論|理由|まず|最初に|強み|志望理由|第一に)/.test(answer);
+    var hasSpecifics = /(\d|年|月|人|%|件|社|チーム|プロジェクト|改善|成果)/.test(answer);
     var hasCompany = settings.company && answer.indexOf(settings.company) !== -1;
     var hasRole = settings.role && answer.indexOf(settings.role) !== -1;
-    var hasReflection = /(学び|改善|次|今後|課題|反省|活か)/.test(answer);
-
+    var hasReflection = /(学び|改善|次|今後|課題|活か)/.test(answer);
     var base = 45;
     base += Math.min(18, Math.floor(length / 18));
     base += hasConclusion ? 8 : -4;
@@ -1131,17 +1137,19 @@
     base += hasReflection ? 8 : 0;
     base -= length < 40 ? 12 : 0;
     base -= length > 700 ? 5 : 0;
-
     return Math.max(20, Math.min(95, base));
   }
 
+  function clampAxis(value) {
+    return Math.max(1, Math.min(10, value));
+  }
+
   function axisScores(score, answer, settings) {
-    var hasSpecifics = /(\d|年|月|人|%|％|件|回|プロジェクト|成果|改善)/.test(answer);
+    var hasSpecifics = /(\d|年|月|人|%|件|プロジェクト|成果|改善)/.test(answer);
     var hasCompany = settings.company && answer.indexOf(settings.company) !== -1;
     var hasRole = settings.role && answer.indexOf(settings.role) !== -1;
-    var hasExperience = /(経験|取り組|担当|役割|行動|実施|挑戦)/.test(answer);
-    var hasConclusion = /(結論|理由|まず|強み|志望)/.test(answer);
-
+    var hasExperience = /(経験|取り組|担当|役割|行動|実施|工夫)/.test(answer);
+    var hasConclusion = /(結論|理由|強み|志望)/.test(answer);
     var base = Math.round(score / 10);
     return {
       "結論の明確さ": clampAxis(base + (hasConclusion ? 1 : -1)),
@@ -1150,37 +1158,28 @@
       "一貫性": clampAxis(base),
       "企業理解": clampAxis(base + (hasCompany ? 1 : -1)),
       "職種理解": clampAxis(base + (hasRole ? 1 : -1)),
-      "自分の経験との接続": clampAxis(base + (hasExperience ? 1 : -1)),
-      "深掘りへの耐性": clampAxis(base + (String(answer || "").length > 120 ? 1 : -1)),
+      "経験との接続": clampAxis(base + (hasExperience ? 1 : -1)),
+      "深掘り耐性": clampAxis(base + (String(answer || "").length > 120 ? 1 : -1)),
       "話の分かりやすさ": clampAxis(base + (String(answer || "").length < 550 ? 1 : -1)),
       "改善余地": clampAxis(11 - base)
     };
   }
 
-  function clampAxis(value) {
-    return Math.max(1, Math.min(10, value));
-  }
-
   function generateFollowUpQuestion(answer, settings) {
-    var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
     var safeAnswer = String(answer || "");
-
     if (safeAnswer.length < 50) {
-      return "もう少し具体的に、状況・あなたの行動・結果の順で説明できますか。";
+      return "もう少し具体的に、状況、あなたの行動、結果の順で説明できますか。";
     }
-    if (!/(\d|年|月|人|%|％|件|回)/.test(safeAnswer)) {
-      return "その成果や規模を、数字や比較で説明するとどうなりますか。";
+    if (!/(\d|年|月|人|%|件)/.test(safeAnswer)) {
+      return "成果や規模を、数字や比較で説明するとどうなりますか。";
     }
-    if (safeSettings.company && safeAnswer.indexOf(safeSettings.company) === -1) {
-      return safeSettings.company + "で働く前提では、その経験をどのように活かせますか。";
+    if (settings.company && safeAnswer.indexOf(settings.company) === -1) {
+      return settings.company + "で働く前提では、その経験をどのように活かせますか。";
     }
-    if (safeSettings.role && safeAnswer.indexOf(safeSettings.role) === -1) {
-      return safeSettings.role + "の仕事に直結する学びは何ですか。";
+    if (settings.role && safeAnswer.indexOf(settings.role) === -1) {
+      return settings.role + "の仕事に直接つながる学びは何ですか。";
     }
-    if (!/(なぜ|理由|背景|課題|目的)/.test(safeAnswer)) {
-      return "その行動を選んだ理由を、他の選択肢と比較して説明できますか。";
-    }
-    return "面接官がさらに確認するとしたら、この経験の再現性をどう説明しますか。";
+    return "同じ状況がもう一度起きたら、次は何を変えますか。";
   }
 
   function buildRevisedAnswerExample(question, answer, settings) {
@@ -1188,9 +1187,9 @@
     var role = settings.role || "希望職種";
     var source = String(answer || "").slice(0, 80);
     return [
-      "結論から申し上げると、私が伝えたい強みは課題を整理し、周囲を巻き込みながら改善まで進める力です。",
-      "具体的には、" + (source || "過去の取り組み") + "という経験で、状況を分析し、優先順位を決めて行動しました。",
-      "その結果として得た学びを、" + company + "の" + role + "でも再現し、成果につなげたいと考えています。"
+      "結論から言うと、私が伝えたい強みは課題を整理し、周囲を巻き込みながら改善まで進める力です。",
+      "具体的には、" + (source || "過去の取り組み") + "という経験で、状況を整理し、優先順位を決めて行動しました。",
+      "この経験で得た学びを、" + company + "の" + role + "でも再現し、成果につなげたいと考えています。"
     ].join("");
   }
 
@@ -1199,42 +1198,26 @@
     var safeAnswer = String(answer || "").trim();
     var score = scoreAnswer(safeAnswer, safeSettings);
     var axes = axisScores(score, safeAnswer, safeSettings);
-    var followUp = generateFollowUpQuestion(safeAnswer, safeSettings);
-    var nextQuestion = generateQuestion(Object.assign({}, safeSettings, {
-      _askedCount: appState.interviewLog && appState.interviewLog.entries
-        ? appState.interviewLog.entries.length + 1
-        : 1
-    }));
     var goodPoints = [];
     var improvements = [];
     var issues = [];
 
     if (axes["結論の明確さ"] >= 7) {
-      goodPoints.push("回答の主張が比較的早い段階で示されています。");
+      goodPoints.push("回答の主張が早い段階で示されています。");
     } else {
-      improvements.push("冒頭で結論を一文で言い切ると、回答全体が伝わりやすくなります。");
+      improvements.push("冒頭で結論を一文で置くと、回答全体が伝わりやすくなります。");
       issues.push("結論が後半まで見えにくく、面接官が要点をつかみにくい可能性があります。");
     }
-
     if (axes["具体性"] >= 7) {
       goodPoints.push("経験や成果に具体性があり、内容をイメージしやすいです。");
     } else {
       improvements.push("数字、期間、人数、成果指標を一つ入れると説得力が上がります。");
       issues.push("抽象表現が多く、実際の行動や成果が伝わりにくいです。");
     }
-
     if (axes["企業理解"] >= 7 || axes["職種理解"] >= 7) {
       goodPoints.push("応募先や職種との接続が意識されています。");
     } else {
       improvements.push("企業の事業、職種で求められる力、自分の経験の接点を明示してください。");
-    }
-
-    if (safeAnswer.length >= 100 && safeAnswer.length <= 450) {
-      goodPoints.push("回答量は面接で扱いやすい長さです。");
-    } else if (safeAnswer.length < 100) {
-      improvements.push("回答が短めです。状況、行動、結果、学びのうち不足している要素を補ってください。");
-    } else {
-      improvements.push("回答が長めです。結論、根拠、応募先での活かし方に絞ると良くなります。");
     }
 
     return {
@@ -1246,12 +1229,58 @@
       goodPoints: goodPoints,
       improvements: improvements,
       issues: issues,
-      deepDiveQuestion: followUp,
+      deepDiveQuestion: generateFollowUpQuestion(safeAnswer, safeSettings),
       direction: "結論を先に置き、根拠となる経験を数字や役割で補強し、最後に応募先での再現性へつなげてください。",
       revisedAnswerExample: buildRevisedAnswerExample(question, safeAnswer, safeSettings),
-      nextQuestion: nextQuestion,
+      nextQuestion: generateQuestion(Object.assign({}, safeSettings, {
+        _askedCount: appState.interviewLog && appState.interviewLog.entries
+          ? appState.interviewLog.entries.length + 1
+          : 1
+      })),
       createdAt: new Date().toISOString()
     };
+  }
+
+  async function getAnswerEvaluation(question, answer, settings) {
+    var fallback = evaluateAnswer(question, answer, settings);
+    try {
+      var result = await callOpenAi(
+        "answer_evaluation",
+        [
+          "以下の面接回答を評価し、次の質問も1つ生成してください。",
+          "点数は0から100、評価軸は1から10で採点してください。",
+          "改善点は実際に次の回答で直せる粒度にしてください。",
+          buildAiContext(settings),
+          "質問: " + question,
+          "回答: " + answer
+        ].join("\n"),
+        schemas.answer_evaluation
+      );
+      return Object.assign({}, fallback, result, {
+        score: Math.max(0, Math.min(100, Math.round(Number(result.score) || fallback.score))),
+        axisScores: normalizeAxisScores(result.axisScores, fallback.axisScores),
+        nextQuestion: result.nextQuestion || fallback.nextQuestion,
+        createdAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.warn("AI answer evaluation failed. Falling back to mock.", error);
+      return fallback;
+    }
+  }
+
+  function normalizeAxisScores(scores, fallback) {
+    var result = {};
+    EVALUATION_AXES.forEach(function (axis) {
+      var value = scores && Number(scores[axis]);
+      result[axis] = Number.isFinite(value) ? Math.max(1, Math.min(10, value)) : fallback[axis];
+    });
+    return result;
+  }
+
+  function unique(items) {
+    return (items || []).filter(function (item, index, array) {
+      return item && array.indexOf(item) === index;
+    });
   }
 
   function generateFinalFeedback(interviewLog) {
@@ -1283,34 +1312,58 @@
     return {
       finalScore: average,
       scoreBreakdown: breakdown,
-      goodPoints: goodPoints.length ? goodPoints : ["回答を提出し、面接練習のログを残せています。"],
-      improvements: improvements.length ? improvements : ["応募先との接続をさらに具体化すると、より強い回答になります。"],
+      goodPoints: goodPoints.length ? goodPoints : ["回答ログを残せています。練習を重ねる土台ができています。"],
+      improvements: improvements.length ? improvements : ["応募先との接点をさらに具体化すると、より強い回答になります。"],
       deepDiveQuestions: deepDives,
-      revisionDirection: "全回答で「結論、背景、具体行動、成果、応募先での活かし方」の順を安定させてください。特に企業理解と職種理解は、各回答の最後に一文で接続すると改善しやすいです。",
+      revisionDirection: "各回答の冒頭に結論を置き、経験、行動、成果、応募先での活かし方を一続きに整理してください。",
       nextPracticeList: [
-        "各回答の冒頭に結論を一文で置く練習をする",
-        "経験ごとに数字、期間、役割、成果を一つずつ整理する",
-        "応募先企業と希望職種で求められる力を3点に絞って言語化する",
+        "各回答の最初に結論を一文で置く練習をする",
+        "経験ごとに数字、期間、役割、成果を整理する",
+        "応募企業と希望職種で求められる力に絞って言語化する",
         "深掘り質問に対して、理由と再現性を30秒で答える"
       ],
       generatedAt: new Date().toISOString()
     };
   }
 
-  function unique(items) {
-    return (items || []).filter(function (item, index, array) {
-      return item && array.indexOf(item) === index;
-    });
+  async function getFinalFeedback(interviewLog) {
+    var fallback = generateFinalFeedback(interviewLog);
+    try {
+      var result = await callOpenAi(
+        "final_feedback",
+        [
+          "以下の面接ログ全体を総合評価してください。",
+          "総合点は0から100、評価軸は1から10で採点してください。",
+          "次回練習項目は具体的な行動にしてください。",
+          "面接設定:",
+          buildAiContext(interviewLog.settings || {}),
+          "面接ログ:",
+          JSON.stringify((interviewLog.entries || []).map(function (entry) {
+            return {
+              questionNumber: entry.questionNumber,
+              question: entry.question,
+              answer: entry.answer,
+              evaluation: entry.evaluation
+            };
+          }))
+        ].join("\n"),
+        schemas.final_feedback
+      );
+      return Object.assign({}, fallback, result, {
+        finalScore: Math.max(0, Math.min(100, Math.round(Number(result.finalScore) || fallback.finalScore))),
+        scoreBreakdown: normalizeAxisScores(result.scoreBreakdown, fallback.scoreBreakdown),
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.warn("AI final feedback failed. Falling back to mock.", error);
+      return fallback;
+    }
   }
 
   function saveInterviewLog(log) {
     var logs = loadInterviewLogs();
-    var settings = log.settings || {};
     var copy = Object.assign({}, log, {
       id: log.id || makeId("session"),
-      accountId: log.accountId || settings.accountId || appState.activeAccountId || null,
-      companyId: log.companyId || settings.companyId || null,
-      esEntryId: log.esEntryId || settings.esEntryId || (settings.sourceEsEntry ? settings.sourceEsEntry.id : null),
       messages: Array.isArray(log.messages) ? log.messages : [],
       evaluations: Array.isArray(log.evaluations) ? log.evaluations : [],
       savedAt: new Date().toISOString()
@@ -1323,51 +1376,39 @@
     } else {
       logs.unshift(copy);
     }
-
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
-    } catch (error) {
-      console.warn("面接ログを保存できませんでした。", error);
-    }
+    saveInterviewLogs(logs);
     return copy;
   }
 
-  function loadInterviewLogs() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      var parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      console.warn("面接ログを読み込めませんでした。", error);
-      return [];
-    }
-  }
-
   function clearInterviewLogs() {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch (error) {
-      console.warn("面接ログを削除できませんでした。", error);
-    }
+    saveInterviewLogs([]);
   }
 
   function deleteInterviewLog(id) {
-    if (!id) {
-      return;
-    }
-    var nextLogs = loadInterviewLogs().filter(function (log) {
+    saveInterviewLogs(loadInterviewLogs().filter(function (log) {
       return log.id !== id;
+    }));
+  }
+
+  function setBusy(isBusy, message) {
+    appState.isBusy = Boolean(isBusy);
+    ["startInterviewBtn", "submitAnswerBtn", "finishInterviewBtn", "analyzeEsBtn", "testAiConnectionBtn"].forEach(function (id) {
+      var button = $(id);
+      if (button) {
+        button.disabled = appState.isBusy;
+      }
     });
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextLogs));
-    } catch (error) {
-      console.warn("面接ログを削除できませんでした。", error);
+    if (message) {
+      setText("feedbackSummary", message);
     }
   }
 
-  function startInterview(sourceEsEntry) {
+  async function startInterview(sourceEsEntry) {
     if (sourceEsEntry && typeof sourceEsEntry.preventDefault === "function") {
       sourceEsEntry = null;
+    }
+    if (appState.isBusy) {
+      return;
     }
     var settings = readSettings();
     var source = sourceEsEntry || appState.pendingSourceEsEntry;
@@ -1393,22 +1434,29 @@
       startedAt: new Date().toISOString(),
       finalFeedback: null
     };
-    appState.currentQuestion = generateQuestion(settings);
-    setText("currentQuestion", appState.currentQuestion);
+    setText("currentQuestion", "質問を生成中です...");
     setText("feedbackSummary", "");
     setText("followUpQuestion", "");
-    setText("progressText", "1 / " + settings.questionCount);
-    clearElement("chatTimeline");
+    setText("progressText", "質問 1 / " + settings.questionCount);
+    var timeline = $("chatTimeline");
+    if (timeline) {
+      timeline.textContent = "";
+    }
+    showView("interviewView");
+    setBusy(true, "質問を生成中です...");
+    appState.currentQuestion = await getInterviewQuestion(settings);
+    setText("currentQuestion", appState.currentQuestion);
+    setText("feedbackSummary", "回答を入力してください。");
+    setBusy(false);
     var answerInput = $("answerInput");
     if (answerInput) {
       answerInput.value = "";
       answerInput.focus();
     }
-    showView("interviewView");
   }
 
-  function submitAnswer() {
-    if (!appState.interviewLog || appState.finished) {
+  async function submitAnswer() {
+    if (!appState.interviewLog || appState.finished || appState.isBusy) {
       return;
     }
 
@@ -1419,7 +1467,8 @@
       return;
     }
 
-    var evaluation = evaluateAnswer(appState.currentQuestion, answer, appState.settings);
+    setBusy(true, "回答を評価中です...");
+    var evaluation = await getAnswerEvaluation(appState.currentQuestion, answer, appState.settings);
     var message = {
       id: makeId("msg"),
       sessionId: appState.interviewLog.id,
@@ -1449,19 +1498,20 @@
 
     renderImmediateFeedback(evaluation);
     appendTimelineEntry(appState.currentQuestion, answer, evaluation);
-
     if (answerInput) {
       answerInput.value = "";
     }
 
     if (appState.questionIndex >= appState.settings.questionCount) {
-      finishInterview();
+      setBusy(false);
+      await finishInterview();
       return;
     }
 
-    appState.currentQuestion = evaluation.nextQuestion || generateQuestion(appState.settings);
+    appState.currentQuestion = evaluation.nextQuestion || await getInterviewQuestion(appState.settings);
     setText("currentQuestion", appState.currentQuestion);
-    setText("progressText", (appState.questionIndex + 1) + " / " + appState.settings.questionCount);
+    setText("progressText", "質問 " + (appState.questionIndex + 1) + " / " + appState.settings.questionCount);
+    setBusy(false);
   }
 
   function renderImmediateFeedback(evaluation) {
@@ -1474,35 +1524,31 @@
     if (!timeline) {
       return;
     }
-
     var item = document.createElement("article");
     item.className = "timeline-item";
-
     var questionEl = document.createElement("p");
     questionEl.textContent = "Q. " + question;
-    item.appendChild(questionEl);
-
     var answerEl = document.createElement("p");
     answerEl.textContent = "A. " + answer;
-    item.appendChild(answerEl);
-
     var scoreEl = document.createElement("p");
     scoreEl.textContent = "評価: " + evaluation.score + "点 / 深掘り: " + evaluation.deepDiveQuestion;
+    item.appendChild(questionEl);
+    item.appendChild(answerEl);
     item.appendChild(scoreEl);
-
     timeline.appendChild(item);
   }
 
-  function finishInterview() {
-    if (!appState.interviewLog || appState.finished) {
+  async function finishInterview() {
+    if (!appState.interviewLog || appState.finished || appState.isBusy) {
       return;
     }
-
+    setBusy(true, "最終フィードバックを作成中です...");
     appState.finished = true;
     appState.interviewLog.finishedAt = new Date().toISOString();
-    appState.interviewLog.finalFeedback = generateFinalFeedback(appState.interviewLog);
+    appState.interviewLog.finalFeedback = await getFinalFeedback(appState.interviewLog);
     appState.interviewLog = saveInterviewLog(appState.interviewLog);
     renderFinalFeedback(appState.interviewLog.finalFeedback);
+    setBusy(false);
     showView("feedbackView");
   }
 
@@ -1510,7 +1556,6 @@
     if (!feedback) {
       return;
     }
-
     setText("finalScore", feedback.finalScore + "点");
     renderScoreBreakdown(feedback.scoreBreakdown);
     appendListItems("goodPointsList", feedback.goodPoints);
@@ -1520,15 +1565,28 @@
     appendListItems("nextPracticeList", feedback.nextPracticeList);
   }
 
+  function appendListItems(id, items) {
+    var element = $(id);
+    if (!element) {
+      return;
+    }
+    element.textContent = "";
+    (items || []).forEach(function (item) {
+      var li = document.createElement("li");
+      li.textContent = item;
+      element.appendChild(li);
+    });
+  }
+
   function renderScoreBreakdown(scoreBreakdown) {
     var element = $("scoreBreakdown");
     if (!element) {
       return;
     }
     element.textContent = "";
-    Object.keys(scoreBreakdown || {}).forEach(function (axis) {
+    EVALUATION_AXES.forEach(function (axis) {
       var row = document.createElement("div");
-      row.textContent = axis + ": " + scoreBreakdown[axis] + " / 10";
+      row.textContent = axis + ": " + ((scoreBreakdown && scoreBreakdown[axis]) || 0) + " / 10";
       element.appendChild(row);
     });
   }
@@ -1571,11 +1629,36 @@
         list.appendChild(button);
       });
     }
-
     if (detail) {
       detail.textContent = logs.length ? "履歴を選択してください。" : "";
     }
     showView("historyView");
+  }
+
+  function getLogCompanyName(log) {
+    var settings = log.settings || {};
+    var company = findCompany(log.companyId || settings.companyId, log.accountId || settings.accountId);
+    return company ? company.companyName : (settings.company || "企業未設定");
+  }
+
+  function getLogEntries(log) {
+    if (Array.isArray(log.entries) && log.entries.length) {
+      return log.entries;
+    }
+    return (log.messages || []).map(function (message, index) {
+      return {
+        id: message.id,
+        questionNumber: message.questionNumber || index + 1,
+        question: message.question,
+        answer: message.answer,
+        evaluation: (log.evaluations || [])[index] || null
+      };
+    });
+  }
+
+  function getLogSourceEsEntry(log) {
+    var settings = log.settings || {};
+    return settings.sourceEsEntry || null;
   }
 
   function renderHistoryDetail(log) {
@@ -1585,7 +1668,6 @@
     }
     appState.selectedHistoryId = log && log.id ? log.id : null;
     detail.textContent = "";
-
     var title = document.createElement("h3");
     var settings = log.settings || {};
     var sourceEsEntry = getLogSourceEsEntry(log);
@@ -1605,13 +1687,11 @@
 
     if (sourceEsEntry) {
       var esBlock = document.createElement("section");
+      esBlock.className = "history-detail-section";
       var esTitle = document.createElement("h4");
+      esTitle.textContent = "使用したES";
       var esQuestion = document.createElement("p");
       var esAnswer = document.createElement("p");
-      esBlock.className = "history-detail-section";
-      esTitle.textContent = "使用したES情報";
-      esQuestion.className = "history-detail-es";
-      esAnswer.className = "history-detail-es";
       esQuestion.textContent = "設問: " + (sourceEsEntry.questionText || "未入力");
       esAnswer.textContent = "回答: " + (sourceEsEntry.answerText || "未入力");
       esBlock.appendChild(esTitle);
@@ -1622,21 +1702,17 @@
 
     entries.forEach(function (entry) {
       var block = document.createElement("article");
+      block.className = "history-detail-section";
       var heading = document.createElement("h4");
       var q = document.createElement("p");
       var a = document.createElement("p");
       var e = document.createElement("p");
       var deepDive = document.createElement("p");
-      block.className = "history-detail-section";
       heading.textContent = "Q" + entry.questionNumber;
-      q.textContent = "Q" + entry.questionNumber + ". " + entry.question;
+      q.textContent = "Q. " + entry.question;
       a.textContent = "A. " + entry.answer;
       e.textContent = "評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし");
       deepDive.textContent = "深掘り質問: " + (entry.evaluation && entry.evaluation.deepDiveQuestion ? entry.evaluation.deepDiveQuestion : "なし");
-      q.className = "history-entry-detail";
-      a.className = "history-entry-detail";
-      e.className = "history-entry-detail";
-      deepDive.className = "history-entry-detail";
       block.appendChild(heading);
       block.appendChild(q);
       block.appendChild(a);
@@ -1651,10 +1727,7 @@
       return "日時未設定";
     }
     var date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return "日時未設定";
-    }
-    return date.toLocaleString("ja-JP");
+    return Number.isNaN(date.getTime()) ? "日時未設定" : date.toLocaleString("ja-JP");
   }
 
   function restart() {
@@ -1662,18 +1735,20 @@
   }
 
   function showWorkspace() {
-    if (!appState.activeAccountId) {
-      showView("accountView");
-      return;
-    }
     renderWorkspace();
     showView("workspaceView");
+  }
+
+  function showSettings() {
+    renderAiSettings();
+    showView("settingsView");
   }
 
   function switchAccount() {
     rememberActiveAccount(null);
     appState.selectedCompanyId = null;
     appState.pendingSourceEsEntry = null;
+    appState.pendingEsAnalysis = null;
     renderSourceEsPreview(null);
     renderAccounts();
     showView("accountView");
@@ -1710,13 +1785,128 @@
   }
 
   function handleEsEntryListClick(event) {
-    var target = event.target && event.target.closest ? event.target.closest("[data-action='use-es-entry']") : null;
-    if (target && target.dataset.esEntryId) {
+    var target = event.target && event.target.closest ? event.target.closest("[data-action]") : null;
+    if (!target || !target.dataset.esEntryId) {
+      return;
+    }
+    if (target.dataset.action === "use-es-entry") {
       useEsEntry(target.dataset.esEntryId);
+    }
+    if (target.dataset.action === "analyze-es-entry") {
+      analyzeSavedEs(target.dataset.esEntryId);
     }
   }
 
-  function bindLocalWorkspaceEvents() {
+  function getSpeechRecognitionConstructor() {
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  }
+
+  function setVoiceUiState(state) {
+    var panel = document.querySelector(".voice-input-panel");
+    var status = $("voiceStatus");
+    var preview = $("voiceTranscriptPreview");
+    [panel, status, preview].forEach(function (element) {
+      if (!element || !element.classList) {
+        return;
+      }
+      element.classList.remove("is-listening", "is-error");
+      if (state) {
+        element.classList.add(state);
+      }
+    });
+  }
+
+  function updateVoiceInputButtons() {
+    var startButton = $("startVoiceInputBtn");
+    var stopButton = $("stopVoiceInputBtn");
+    if (startButton) {
+      startButton.disabled = !voiceInputState.isSupported || voiceInputState.isListening;
+    }
+    if (stopButton) {
+      stopButton.disabled = !voiceInputState.isSupported || !voiceInputState.isListening;
+    }
+  }
+
+  function setupVoiceInput() {
+    var Recognition = getSpeechRecognitionConstructor();
+    voiceInputState.isSupported = Boolean(Recognition);
+    if (!Recognition) {
+      setText("voiceStatus", "このブラウザは音声入力に対応していません。");
+      setVoiceUiState("is-error");
+      updateVoiceInputButtons();
+      return;
+    }
+    voiceInputState.recognition = new Recognition();
+    voiceInputState.recognition.lang = "ja-JP";
+    voiceInputState.recognition.continuous = true;
+    voiceInputState.recognition.interimResults = true;
+    voiceInputState.recognition.onstart = function () {
+      voiceInputState.isListening = true;
+      voiceInputState.finalTranscript = "";
+      setText("voiceStatus", "音声入力中です。");
+      setVoiceUiState("is-listening");
+      updateVoiceInputButtons();
+    };
+    voiceInputState.recognition.onresult = function (event) {
+      var interimTranscript = "";
+      var finalTranscript = "";
+      for (var i = 0; i < event.results.length; i += 1) {
+        var result = event.results[i];
+        var transcript = result && result[0] ? result[0].transcript : "";
+        if (result.isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      voiceInputState.finalTranscript += finalTranscript;
+      var answerInput = $("answerInput");
+      if (answerInput) {
+        answerInput.value = voiceInputState.baseAnswer + (voiceInputState.baseAnswer ? "\n" : "") + voiceInputState.finalTranscript;
+      }
+      setText("voiceTranscriptPreview", interimTranscript);
+    };
+    voiceInputState.recognition.onerror = function (event) {
+      voiceInputState.lastError = event && event.error ? event.error : "unknown";
+      setText("voiceStatus", "音声入力でエラーが発生しました: " + voiceInputState.lastError);
+      setVoiceUiState("is-error");
+      voiceInputState.isListening = false;
+      updateVoiceInputButtons();
+    };
+    voiceInputState.recognition.onend = function () {
+      voiceInputState.isListening = false;
+      setText("voiceStatus", "音声入力を停止しました。");
+      setText("voiceTranscriptPreview", "");
+      setVoiceUiState("");
+      updateVoiceInputButtons();
+    };
+    setText("voiceStatus", "音声入力を開始できます。");
+    updateVoiceInputButtons();
+  }
+
+  function startVoiceInput(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    if (!voiceInputState.recognition || voiceInputState.isListening) {
+      return;
+    }
+    var answerInput = $("answerInput");
+    voiceInputState.baseAnswer = answerInput && typeof answerInput.value === "string" ? answerInput.value : "";
+    voiceInputState.finalTranscript = "";
+    voiceInputState.recognition.start();
+  }
+
+  function stopVoiceInput(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    if (voiceInputState.recognition && voiceInputState.isListening) {
+      voiceInputState.recognition.stop();
+    }
+  }
+
+  function bindEvents() {
     on("createAccountBtn", "click", createAccount);
     on("accountForm", "submit", createAccount);
     on("accountList", "click", handleAccountListClick);
@@ -1724,27 +1914,21 @@
     on("saveCompanyBtn", "click", saveCompanyFromForm);
     on("companyList", "click", handleCompanyListClick);
     on("esForm", "submit", saveEsFromForm);
-    on("saveEsBtn", "click", function (event) {
-      var button = $("saveEsBtn");
-      if (button && button.form && button.type !== "button") {
-        return;
-      }
-      saveEsFromForm(event);
-    });
+    on("saveEsBtn", "click", saveEsFromForm);
+    on("analyzeEsBtn", "click", analyzeCurrentEs);
     on("esAnswerInput", "input", updateEsCharCount);
     on("esMaxCharsInput", "input", updateEsCharCount);
     on("esEntryList", "click", handleEsEntryListClick);
-  }
-
-  function bindEvents() {
-    bindLocalWorkspaceEvents();
-    setupVoiceInput();
+    on("saveAiSettingsBtn", "click", saveAiSettingsFromForm);
+    on("testAiConnectionBtn", "click", testAiConnection);
+    on("clearAiSettingsBtn", "click", clearAiSettings);
     on("startInterviewBtn", "click", startInterview);
     on("submitAnswerBtn", "click", submitAnswer);
     on("finishInterviewBtn", "click", finishInterview);
     on("startVoiceInputBtn", "click", startVoiceInput);
     on("stopVoiceInputBtn", "click", stopVoiceInput);
     on("showWorkspaceBtn", "click", showWorkspace);
+    on("showSettingsBtn", "click", showSettings);
     on("showHistoryBtn", "click", renderHistory);
     on("backToSetupBtn", "click", restart);
     on("switchAccountBtn", "click", switchAccount);
@@ -1764,7 +1948,9 @@
 
   function init() {
     bindEvents();
+    setupVoiceInput();
     renderAccounts();
+    renderAiSettings();
     try {
       var storedAccountId = localStorage.getItem(ACTIVE_ACCOUNT_STORAGE_KEY);
       var hasStoredAccount = loadAccounts().some(function (account) {
@@ -1784,7 +1970,6 @@
 
   window.generateQuestion = generateQuestion;
   window.evaluateAnswer = evaluateAnswer;
-  window.generateFollowUpQuestion = generateFollowUpQuestion;
   window.generateFinalFeedback = generateFinalFeedback;
   window.saveInterviewLog = saveInterviewLog;
   window.loadInterviewLogs = loadInterviewLogs;

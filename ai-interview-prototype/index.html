@@ -15,6 +15,7 @@
     </div>
     <nav class="header-actions" aria-label="画面操作">
       <button id="showWorkspaceBtn" class="button button-secondary" type="button">ES管理</button>
+      <button id="showSettingsBtn" class="button button-secondary" type="button">AI設定</button>
       <button id="showHistoryBtn" class="button button-secondary" type="button">履歴</button>
       <button id="backToSetupBtn" class="button button-ghost" type="button">面接設定</button>
       <button id="switchAccountBtn" class="button button-ghost" type="button">アカウント切替</button>
@@ -25,7 +26,7 @@
     <section id="accountView" class="view-panel active-view" aria-labelledby="accountTitle">
       <div class="section-heading">
         <p class="section-label">Account</p>
-        <h2 id="accountTitle">ローカル個人アカウント</h2>
+        <h2 id="accountTitle">ローカルアカウント</h2>
       </div>
 
       <div class="account-layout">
@@ -49,6 +50,47 @@
         </section>
       </div>
       <p id="googleAccountNote">データはこのブラウザの localStorage に保存されます。Google連携は未実装です。</p>
+    </section>
+
+    <section id="settingsView" class="view-panel" aria-labelledby="settingsTitle" hidden>
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="section-label">AI Settings</p>
+          <h2 id="settingsTitle">OpenAI API設定</h2>
+        </div>
+        <p id="aiStatusBadge" class="status-badge">AI: 未設定</p>
+      </div>
+
+      <form id="aiSettingsForm" class="setup-grid">
+        <div class="field field-wide">
+          <label for="openAiApiKeyInput">OpenAI APIキー</label>
+          <input id="openAiApiKeyInput" name="openAiApiKey" type="password" autocomplete="off" placeholder="sk-...">
+          <p class="field-help">APIキーはこのローカルアプリからOpenAIへ送信されます。共有PCでは保存しない設定を推奨します。</p>
+        </div>
+        <div class="field">
+          <label for="openAiModelInput">モデル</label>
+          <input id="openAiModelInput" name="openAiModel" type="text" placeholder="gpt-4.1-mini">
+        </div>
+        <div class="field">
+          <label for="aiModeSelect">AI利用</label>
+          <select id="aiModeSelect" name="aiMode">
+            <option value="openai">OpenAIを使う</option>
+            <option value="mock">モックのみ使う</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="checkbox-label" for="rememberApiKeyInput">
+            <input id="rememberApiKeyInput" name="rememberApiKey" type="checkbox">
+            APIキーをこのブラウザに保存する
+          </label>
+        </div>
+        <div class="form-actions field-wide">
+          <button id="saveAiSettingsBtn" class="button button-primary" type="button">設定を保存</button>
+          <button id="testAiConnectionBtn" class="button button-secondary" type="button">接続テスト</button>
+          <button id="clearAiSettingsBtn" class="button button-danger" type="button">APIキー削除</button>
+        </div>
+        <div id="aiSettingsMessage" class="inline-feedback field-wide" aria-live="polite">APIキーを入力すると、ES分析・質問生成・回答評価・最終フィードバックでOpenAIを使えます。</div>
+      </form>
     </section>
 
     <section id="workspaceView" class="view-panel" aria-labelledby="workspaceTitle" hidden>
@@ -141,8 +183,11 @@
             </div>
             <div class="form-actions">
               <button id="saveEsBtn" class="button button-primary" type="button">ESを保存</button>
+              <button id="analyzeEsBtn" class="button button-secondary" type="button">AIでES分析</button>
             </div>
           </form>
+
+          <div id="esAiAnalysis" class="ai-analysis-panel" hidden></div>
 
           <div class="list-block">
             <h3>選択中企業のES</h3>
@@ -226,7 +271,7 @@
           </select>
         </div>
         <div class="field field-wide">
-          <label for="userProfileInput">自分のメモ</label>
+          <label for="userProfileInput">自分用メモ</label>
           <textarea id="userProfileInput" name="userProfile" rows="7" placeholder="学歴、研究、開発経験、強み、志望理由、今日の面接で詰まった質問など"></textarea>
         </div>
         <div id="sourceEsPreview" class="source-es-preview field-wide" hidden>
@@ -276,7 +321,7 @@
             <button id="startVoiceInputBtn" class="button button-secondary" type="button" aria-controls="answerInput voiceTranscriptPreview">音声入力を開始</button>
             <button id="stopVoiceInputBtn" class="button button-secondary" type="button" aria-controls="answerInput voiceTranscriptPreview" disabled>停止</button>
           </div>
-          <p id="voiceStatus" class="voice-status" role="status" aria-live="polite">音声入力は待機中です。対応状況を確認しています。</p>
+          <p id="voiceStatus" class="voice-status" role="status" aria-live="polite">音声入力の待機中です。対応状況を確認しています。</p>
           <div id="voiceTranscriptPreview" class="voice-transcript-preview voice-preview" aria-live="polite" aria-label="音声認識の暫定文字起こし">
             認識中の文字起こしがここに表示されます。
           </div>
