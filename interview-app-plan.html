@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI面接官アプリ 開発計画</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #1d2430;
+      --muted: #667085;
+      --line: #d9dee7;
+      --accent: #176b87;
+      --accent-soft: #e7f3f7;
+      --green: #21856f;
+      --amber: #a66a00;
+      --blue: #2d5f9a;
+      --shadow: 0 10px 28px rgba(20, 31, 46, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      line-height: 1.7;
+    }
+
+    header {
+      background: #102a3a;
+      color: #ffffff;
+      padding: 46px 24px 34px;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: #b9d6e1;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 16px 0 0;
+      color: #d7e5ea;
+      font-size: 17px;
+    }
+
+    main {
+      padding: 28px 0 56px;
+    }
+
+    section {
+      margin-top: 22px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+      line-height: 1.3;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+      line-height: 1.35;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.cols-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .grid.cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .summary strong {
+      color: var(--accent);
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #104d63;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .list {
+      padding-left: 20px;
+      margin: 10px 0 0;
+    }
+
+    .list li {
+      margin: 6px 0;
+    }
+
+    .feature {
+      min-height: 178px;
+    }
+
+    .badge {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge.green {
+      background: var(--green);
+    }
+
+    .badge.amber {
+      background: var(--amber);
+    }
+
+    .badge.blue {
+      background: var(--blue);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .step {
+      position: relative;
+      padding: 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .step-num {
+      display: inline-grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      margin-bottom: 12px;
+      border-radius: 50%;
+      background: #102a3a;
+      color: #ffffff;
+      font-weight: 800;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 12px;
+    }
+
+    .phase {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 16px;
+      align-items: start;
+      padding: 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .phase-label {
+      color: var(--accent);
+      font-weight: 800;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    th,
+    td {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf3f5;
+      color: #22313f;
+      font-size: 14px;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .priority {
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .reading-guide {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+
+    .reading-guide > p {
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .prep-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .prep-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfd;
+    }
+
+    .prep-card h3 {
+      color: #123746;
+    }
+
+    .read-order {
+      display: grid;
+      gap: 10px;
+      counter-reset: readstep;
+    }
+
+    .read-item {
+      position: relative;
+      padding: 14px 14px 14px 54px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+
+    .read-item::before {
+      counter-increment: readstep;
+      content: counter(readstep);
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .check-columns {
+      columns: 2;
+      column-gap: 28px;
+      padding-left: 20px;
+      margin: 10px 0 0;
+    }
+
+    .check-columns li {
+      break-inside: avoid;
+      margin: 0 0 7px;
+    }
+
+    .source-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .source-list a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eef4f6;
+      color: #104d63;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .note {
+      border-left: 5px solid var(--accent);
+      background: #ffffff;
+    }
+
+    footer {
+      padding: 24px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      .summary,
+      .grid.cols-3,
+      .grid.cols-2,
+      .flow,
+      .phase,
+      .prep-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .check-columns {
+        columns: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">AIchatbot Project Plan</p>
+      <h1>AI面接官で面接対策をするアプリ</h1>
+      <p class="lead">
+        AI面接官が質問し、ユーザーの回答に深掘りし、最後に改善点と回答例を返す面接練習アプリを作成する。
+        まずはMVPとして「モード選択」「面接チャット」「フィードバック」までを実装する。
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="summary">
+      <div class="panel">
+        <h2>開発ゴール</h2>
+        <p>
+          <strong>ブラウザ上で動くAI面接練習アプリ</strong>を作る。
+          ユーザーは面接モードを選び、AI面接官と会話し、面接終了後に評価と改善案を確認できる。
+        </p>
+        <div class="tag-row">
+          <span class="tag">AI面接官</span>
+          <span class="tag">面接練習</span>
+          <span class="tag">チャットUI</span>
+          <span class="tag">フィードバック</span>
+          <span class="tag">OpenAI API</span>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>推奨技術</h2>
+        <ul class="list">
+          <li>フロントエンド: React + Vite</li>
+          <li>UI: Tailwind CSS</li>
+          <li>バックエンド: Node.js + Express</li>
+          <li>AI連携: OpenAI API</li>
+          <li>保存: 最初はローカル保存、後でSQLite</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2>主要機能</h2>
+      <div class="grid cols-3">
+        <article class="panel feature">
+          <span class="badge green">MVP</span>
+          <h3>面接モード選択</h3>
+          <p>新卒、転職、技術面接、英語面接、自己PR対策などから練習内容を選べる。</p>
+        </article>
+        <article class="panel feature">
+          <span class="badge green">MVP</span>
+          <h3>AI面接官チャット</h3>
+          <p>AIが質問し、ユーザー回答に応じて深掘り質問を返す。面接らしい流れを作る。</p>
+        </article>
+        <article class="panel feature">
+          <span class="badge green">MVP</span>
+          <h3>フィードバック</h3>
+          <p>回答の良い点、改善点、より良い回答例、次回の練習ポイントを表示する。</p>
+        </article>
+        <article class="panel feature">
+          <span class="badge amber">次段階</span>
+          <h3>評価スコア</h3>
+          <p>論理性、具体性、志望度、コミュニケーション力などをスコア化する。</p>
+        </article>
+        <article class="panel feature">
+          <span class="badge amber">次段階</span>
+          <h3>履歴保存</h3>
+          <p>過去の面接内容、回答、フィードバックを保存し、後から見返せるようにする。</p>
+        </article>
+        <article class="panel feature">
+          <span class="badge blue">拡張</span>
+          <h3>音声入力</h3>
+          <p>マイクで回答し、実際の面接に近い練習をできるようにする。</p>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>画面構成</h2>
+      <div class="flow">
+        <div class="step">
+          <div class="step-num">1</div>
+          <h3>ホーム</h3>
+          <p>面接モードを選択し、練習を開始する。</p>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <h3>面接チャット</h3>
+          <p>AI面接官の質問に回答する。会話履歴を表示する。</p>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <h3>結果レポート</h3>
+          <p>総合評価、改善点、回答例を確認する。</p>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <h3>履歴</h3>
+          <p>過去の練習結果を一覧で確認する。MVP後に追加する。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>実装ロードマップ</h2>
+      <div class="timeline">
+        <div class="phase">
+          <div class="phase-label">Phase 1</div>
+          <div>
+            <h3>基本アプリ作成</h3>
+            <p>React + Viteで画面を作り、モード選択、チャット画面、結果画面の見た目を完成させる。</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-label">Phase 2</div>
+          <div>
+            <h3>AI連携</h3>
+            <p>Expressバックエンドを作成し、OpenAI APIに質問生成とフィードバック生成を依頼する。</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-label">Phase 3</div>
+          <div>
+            <h3>面接品質の調整</h3>
+            <p>面接官プロンプトを改善し、深掘り質問、評価基準、回答例の品質を上げる。</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-label">Phase 4</div>
+          <div>
+            <h3>保存と拡張</h3>
+            <p>履歴保存、評価スコア、音声入力、職種別テンプレートを追加する。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>MVPで作る範囲</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>優先度</th>
+            <th>機能</th>
+            <th>内容</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="priority">高</td>
+            <td>面接モード選択</td>
+            <td>練習したい面接タイプを選ぶ。</td>
+          </tr>
+          <tr>
+            <td class="priority">高</td>
+            <td>AI面接官チャット</td>
+            <td>質問、回答、深掘り質問をチャット形式で行う。</td>
+          </tr>
+          <tr>
+            <td class="priority">高</td>
+            <td>面接終了</td>
+            <td>任意のタイミングで面接を終了し、評価生成に進む。</td>
+          </tr>
+          <tr>
+            <td class="priority">高</td>
+            <td>フィードバック表示</td>
+            <td>良い点、改善点、回答例、次回の練習ポイントを出す。</td>
+          </tr>
+          <tr>
+            <td>中</td>
+            <td>履歴保存</td>
+            <td>最初は後回し。MVP完成後に追加する。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="reading-guide">
+      <h2>最初に読むべき事項: 面接対策の全体像</h2>
+      <p>
+        3つの調査エージェントの回答を統合し、AI面接官アプリで最初に読ませるべき面接対策事項として整理したもの。
+        暗記用ではなく、面接で評価される観点を理解し、練習時のチェック項目に変換するための基礎資料。
+      </p>
+
+      <h3>読む順序</h3>
+      <div class="read-order">
+        <div class="read-item">
+          <h3>面接の目的と評価観点</h3>
+          <p>面接は回答暗記の発表ではなく、職務適合性、能力、価値観、志望度、再現性、対話力を確認する場。</p>
+        </div>
+        <div class="read-item">
+          <h3>自己分析と経験の棚卸し</h3>
+          <p>強み、弱み、価値観、仕事選びの軸、成功、失敗、困難、協働、リーダーシップ、学習経験を整理する。</p>
+        </div>
+        <div class="read-item">
+          <h3>企業研究・職種研究</h3>
+          <p>事業、顧客、競合、職務内容、必要スキル、成果指標、カルチャー、求める人物像を調べる。</p>
+        </div>
+        <div class="read-item">
+          <h3>回答の基本構造</h3>
+          <p>結論、理由、具体例、成果、学び、入社後の活用の順で話す。行動面接ではSTAR法を基本型にする。</p>
+        </div>
+        <div class="read-item">
+          <h3>深掘り質問への備え</h3>
+          <p>なぜそうしたか、他案は何か、自分の役割は何か、失敗要因は何か、再現できるかを説明できるようにする。</p>
+        </div>
+        <div class="read-item">
+          <h3>当日の振る舞いとオンライン準備</h3>
+          <p>時間、服装、姿勢、表情、声、聞く姿勢、通信、カメラ、照明、背景、通知オフを整える。</p>
+        </div>
+        <div class="read-item">
+          <h3>逆質問・面接後フォロー</h3>
+          <p>役割、成果基準、チーム、課題、入社後の期待を聞く。面接後は簡潔な感謝と関心を伝える。</p>
+        </div>
+      </div>
+
+      <section>
+        <h2>対策すべき重要事項</h2>
+        <div class="prep-grid">
+          <article class="prep-card">
+            <h3>面接の目的理解</h3>
+            <p>面接官は話の上手さだけでなく、職務に必要な知識、スキル、経験、価値観、問題解決力、組織との相性を見ている。</p>
+          </article>
+          <article class="prep-card">
+            <h3>質問意図の理解</h3>
+            <p>自己PR、志望動機、強み弱み、失敗経験には、それぞれ確認したい評価観点がある。質問の裏にある意図を読んで答える。</p>
+          </article>
+          <article class="prep-card">
+            <h3>自己分析</h3>
+            <p>過去経験から、自分の強み、弱み、価値観、やりがい、苦手な環境、仕事選びの軸を言語化する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>経験の棚卸し</h3>
+            <p>学業、仕事、研究、アルバイト、部活、プロジェクト、失敗、挫折、協働、改善、学習の経験をリスト化する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>強みの根拠</h3>
+            <p>「私は粘り強いです」だけで終えず、その強みが表れた状況、行動、成果、周囲への影響を添える。</p>
+          </article>
+          <article class="prep-card">
+            <h3>弱みの扱い</h3>
+            <p>致命的な印象や責任転嫁を避け、弱みの認識、改善行動、現在の変化まで話す。</p>
+          </article>
+          <article class="prep-card">
+            <h3>企業研究</h3>
+            <p>企業理念、事業内容、顧客、収益源、競合、強み弱み、採用情報、選考フローを確認する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>職種研究</h3>
+            <p>仕事内容、必要スキル、成果指標、関係部署、入社後の期待役割を理解し、自分の経験と接続する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>志望動機</h3>
+            <p>なぜ業界、なぜ企業、なぜ職種、入社後に何をしたいかを、自分の経験と企業特徴の接点で説明する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>応募書類との整合</h3>
+            <p>履歴書、ES、職務経歴書に書いた内容を自然に説明できるようにし、面接回答と矛盾させない。</p>
+          </article>
+          <article class="prep-card">
+            <h3>基本質問対策</h3>
+            <p>自己紹介、自己PR、志望動機、ガクチカ、実績、転職理由、強み弱み、失敗経験、困難克服、将来像、逆質問を準備する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>回答構成</h3>
+            <p>結論を先に置き、根拠、具体例、結果、学び、次にどう活かすかの順で短く話す。</p>
+          </article>
+          <article class="prep-card">
+            <h3>STAR法</h3>
+            <p>Situation、Task、Action、Resultで経験を整理する。特に「自分が何を考え、何をしたか」を明確にする。</p>
+          </article>
+          <article class="prep-card">
+            <h3>STARにLearningを足す</h3>
+            <p>失敗、困難、改善系の質問では、結果で終わらず、学びと次回への応用まで話す。</p>
+          </article>
+          <article class="prep-card">
+            <h3>具体性</h3>
+            <p>人数、期間、売上、工数、品質、速度、満足度、再発防止など、数字や事実で成果を示す。</p>
+          </article>
+          <article class="prep-card">
+            <h3>自分の役割</h3>
+            <p>チーム成果を話す場合は、チーム全体の話と自分の担当、判断、行動、影響を分ける。</p>
+          </article>
+          <article class="prep-card">
+            <h3>深掘り耐性</h3>
+            <p>なぜ、具体的には、他の選択肢は、反対意見は、失敗要因は、再現性は、という追加質問に答えられるようにする。</p>
+          </article>
+          <article class="prep-card">
+            <h3>行動面接</h3>
+            <p>過去の行動から将来の行動を推定される。リーダーシップ、対立、失敗、改善、巻き込み、学習、倫理観の実例を用意する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>状況面接</h3>
+            <p>「もしこうなったら」系では、前提確認、優先順位、リスク、関係者、判断基準を言語化する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>技術面接</h3>
+            <p>答えだけでなく、要件確認、制約整理、設計方針、実装、テスト、計算量、例外処理、トレードオフ説明が見られる。</p>
+          </article>
+          <article class="prep-card">
+            <h3>職種別評価軸</h3>
+            <p>営業は顧客理解と数字、PMは課題設定と合意形成、エンジニアは設計と保守性、マネージャーは育成と意思決定を重視する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>転職理由・退職理由</h3>
+            <p>不満の羅列にせず、学び、今後実現したいこと、応募先との接点に変換する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>答えにくい質問</h3>
+            <p>ブランク、短期離職、未経験、希望年収、失敗経験は、誠実さと改善行動を軸に説明を準備する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>面接フェーズ別対策</h3>
+            <p>一次は基本適性、二次は職務理解と再現性、最終は志望度、価値観、入社意思が見られやすい。</p>
+          </article>
+          <article class="prep-card">
+            <h3>話す量と時間</h3>
+            <p>1回答は目安1から2分。長い前置きを避け、深掘りされたら追加説明する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>話し方</h3>
+            <p>声量、速度、間、語尾、明瞭さを整える。フィラーを減らし、オンラインでは少しはっきり話す。</p>
+          </article>
+          <article class="prep-card">
+            <h3>聞く姿勢</h3>
+            <p>うなずき、メモ、相手の発言を踏まえた返答で、対話できることを示す。</p>
+          </article>
+          <article class="prep-card">
+            <h3>第一印象</h3>
+            <p>服装、表情、姿勢、挨拶、時間厳守、受付や待機中の態度は内容以前の基本評価に影響する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>オンライン面接</h3>
+            <p>通信、カメラ、マイク、照明、背景、通知オフ、充電、予備イヤホン、名前表示を事前確認する。</p>
+          </article>
+          <article class="prep-card">
+            <h3>台本読み回避</h3>
+            <p>メモはキーワード程度にし、画面読み上げではなく自然な会話として話す。</p>
+          </article>
+          <article class="prep-card">
+            <h3>逆質問</h3>
+            <p>役割、成果基準、チーム、事業課題、入社後の期待、選考プロセスを聞く。待遇だけに偏らない。</p>
+          </article>
+          <article class="prep-card">
+            <h3>NG行動</h3>
+            <p>遅刻、準備不足、スマホ確認、相手を遮る、話しすぎ、質問なし、カメラオフ、前職批判、虚偽、過剰な自己PRを避ける。</p>
+          </article>
+          <article class="prep-card">
+            <h3>公正採用への配慮</h3>
+            <p>本籍、家族、宗教、支持政党、思想信条、生活環境など、適性や能力に関係ない事項を質問・評価に使わない。</p>
+          </article>
+          <article class="prep-card">
+            <h3>面接後フォロー</h3>
+            <p>面接後は、感謝、印象に残った話、職務への関心、自分の適合点を簡潔に伝える。</p>
+          </article>
+          <article class="prep-card">
+            <h3>メンタル準備</h3>
+            <p>睡眠、軽い運動、深呼吸、経路確認、想定質問練習で不安要因を減らす。緊張は普通の反応として扱う。</p>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>AI面接官アプリに入れる評価チェック項目</h2>
+        <ul class="check-columns">
+          <li>面接の目的と評価観点を理解しているか</li>
+          <li>自己分析の強み、弱み、価値観、仕事選びの軸が入力済みか</li>
+          <li>成功、失敗、困難、協働、リーダーシップ、学習のエピソードがあるか</li>
+          <li>企業の事業、顧客、競合、職種、求める人物像を調べているか</li>
+          <li>志望動機に「なぜ業界」「なぜ企業」「なぜ職種」があるか</li>
+          <li>応募書類と面接回答に矛盾がないか</li>
+          <li>回答が結論から始まっているか</li>
+          <li>STARの状況、課題、行動、結果が揃っているか</li>
+          <li>自分の行動とチーム成果を分けて説明しているか</li>
+          <li>成果が数字、期間、対象、変化で示されているか</li>
+          <li>学び、改善、次回への応用があるか</li>
+          <li>質問に対して過不足なく答えているか</li>
+          <li>回答が長すぎないか、短すぎないか</li>
+          <li>抽象語だけで終わっていないか</li>
+          <li>深掘り質問に耐えられる具体性があるか</li>
+          <li>失敗談で責任転嫁していないか</li>
+          <li>退職理由や弱みを前向きな改善につなげているか</li>
+          <li>技術面接で前提確認、設計、テスト、計算量、トレードオフを話せているか</li>
+          <li>職種別の評価軸に回答が合っているか</li>
+          <li>声量、速度、間、語尾、フィラーに問題がないか</li>
+          <li>表情、姿勢、視線、うなずき、聞く姿勢が整っているか</li>
+          <li>オンライン環境のカメラ、マイク、照明、背景、通知オフを確認したか</li>
+          <li>逆質問が3つ以上あり、待遇だけに偏っていないか</li>
+          <li>前職批判、虚偽、話しすぎ、質問なし、台本読みを検知できるか</li>
+          <li>本籍、家族、宗教、思想信条など職務無関係な属性を質問・評価していないか</li>
+          <li>面接後の振り返りとして、良かった点、改善点、次回練習テーマを出せるか</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>統合に使った参考観点</h2>
+        <p>
+          3名のエージェントが参照・整理した観点を統合した。国内の就活・転職面接対策、構造化面接、STAR法、
+          行動面接、技術面接、オンライン面接、面接後フォロー、公正採用の観点を含める。
+        </p>
+        <div class="source-list">
+          <a href="https://job.rikunabi.com/contents/howto/4143/">リクナビ 自己分析</a>
+          <a href="https://job.rikunabi.com/contents/company/2536/">リクナビ 企業研究</a>
+          <a href="https://job.rikunabi.com/contents/interview/">リクナビ 面接準備</a>
+          <a href="https://tenshoku.mynavi.jp/knowhow/mensetsu/">マイナビ転職 面接対策</a>
+          <a href="https://doda.jp/guide/mensetsu/">doda 面接対策</a>
+          <a href="https://www.mhlw.go.jp/www2/topics/topics/saiyo/saiyo1.htm">厚生労働省 公正採用</a>
+          <a href="https://en.wikipedia.org/wiki/Structured_interview">Structured interview</a>
+          <a href="https://en.wikipedia.org/wiki/Situation%2C_task%2C_action%2C_result">STAR method</a>
+          <a href="https://en.wikipedia.org/wiki/Coding_interview">Coding interview</a>
+          <a href="https://www.indeed.com/career-advice/interviewing/virtual-interview">Indeed Virtual Interview</a>
+          <a href="https://www.indeed.com/career-advice/interviewing/questions-to-ask-in-an-interview">Indeed Questions To Ask</a>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel note">
+      <h2>次にやること</h2>
+      <p>
+        この計画で問題なければ、次は `AIchatbot` フォルダー内にReact + Viteの実装を作成する。
+        まずはAPIなしの見た目と画面遷移を作り、その後OpenAI API連携を追加するのが最も進めやすい。
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    AIchatbot / AI面接官アプリ開発計画
+  </footer>
+</body>
+</html>

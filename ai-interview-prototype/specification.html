@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI面接練習アプリ 仕様書</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --paper: #ffffff;
+      --ink: #1f2937;
+      --muted: #64748b;
+      --line: #d8dee8;
+      --accent: #0f766e;
+      --accent-dark: #115e59;
+      --soft: #e7f5f2;
+      --warn: #8a5a00;
+      --warn-soft: #fff5db;
+      --code: #101827;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+      line-height: 1.75;
+    }
+
+    header {
+      background: #10231f;
+      color: #f8fafc;
+      padding: 40px 20px 34px;
+      border-bottom: 6px solid var(--accent);
+    }
+
+    .header-inner,
+    main {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 4vw, 44px);
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 860px;
+      color: #d6e4e1;
+      font-size: 16px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 24px;
+      padding: 28px 0 56px;
+    }
+
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    nav ol {
+      margin: 0;
+      padding-left: 22px;
+    }
+
+    nav li {
+      margin: 7px 0;
+      font-size: 14px;
+    }
+
+    nav a {
+      color: var(--accent-dark);
+      text-decoration: none;
+    }
+
+    nav a:hover {
+      text-decoration: underline;
+    }
+
+    .content {
+      min-width: 0;
+    }
+
+    section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid var(--soft);
+      font-size: 24px;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 22px 0 10px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    ul,
+    ol {
+      margin-top: 0;
+      padding-left: 24px;
+    }
+
+    li {
+      margin: 7px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef2f6;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #eef2f6;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+
+    pre {
+      margin: 12px 0 18px;
+      padding: 16px;
+      overflow: auto;
+      border-radius: 8px;
+      background: var(--code);
+      color: #e5edf7;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    .note {
+      margin: 14px 0;
+      padding: 12px 14px;
+      border-left: 4px solid var(--accent);
+      background: var(--soft);
+    }
+
+    .warning {
+      margin: 14px 0;
+      padding: 12px 14px;
+      border-left: 4px solid var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .tag-list li {
+      margin: 0;
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafc;
+      font-size: 13px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .flow div {
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafc;
+      font-size: 14px;
+    }
+
+    .flow strong {
+      display: block;
+      color: var(--accent-dark);
+    }
+
+    footer {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto 32px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      nav {
+        position: static;
+      }
+
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>AI面接練習アプリ 仕様書</h1>
+      <p class="lead">
+        就活生がAI面接官と面接練習を行い、回答内容に基づく評価、改善案、深掘り質問、修正版の方向性を得るためのHTML/CSS/JavaScriptプロトタイプ仕様。
+      </p>
+    </div>
+  </header>
+
+  <main>
+    <nav aria-label="目次">
+      <h2>目次</h2>
+      <ol>
+        <li><a href="#overview">アプリ概要</a></li>
+        <li><a href="#requirements">要求定義</a></li>
+        <li><a href="#functional">機能要件</a></li>
+        <li><a href="#non-functional">非機能要件</a></li>
+        <li><a href="#screens">画面構成</a></li>
+        <li><a href="#transitions">画面遷移</a></li>
+        <li><a href="#data">データ構造</a></li>
+        <li><a href="#conversation">AIチャットの会話設計</a></li>
+        <li><a href="#evaluation">評価ロジック</a></li>
+        <li><a href="#vv">V&amp;V基準</a></li>
+        <li><a href="#prototype">HTML/CSS/JavaScriptプロトタイプ仕様</a></li>
+        <li><a href="#next">次の開発手順</a></li>
+      </ol>
+    </nav>
+
+    <div class="content">
+      <section id="overview">
+        <h2>1. アプリ概要</h2>
+        <p>
+          本アプリは、就職活動中の学生がAI面接官とのチャット形式で面接練習を行い、回答の明確さ、具体性、構造、職種適合性、研究・開発経験の説明力を改善するための練習支援ツールである。
+        </p>
+        <p>
+          初期プロトタイプでは外部AI APIを使用せず、質問生成、評価、改善提案をJavaScript内のモックロジックで実現する。面接セッション、回答、フィードバック、履歴はブラウザの<code>localStorage</code>に保存する。
+        </p>
+        <ul class="tag-list">
+          <li>対象: 就活生</li>
+          <li>重点: 面接回答の改善</li>
+          <li>対応領域: 一般面接、理系研究、開発経験</li>
+          <li>保存: localStorage</li>
+          <li>AI API: モック</li>
+        </ul>
+      </section>
+
+      <section id="requirements">
+        <h2>2. 要求定義</h2>
+        <h3>利用者要求</h3>
+        <ul>
+          <li>学生は志望企業、職種、面接形式、練習テーマを設定できる。</li>
+          <li>学生はAI面接官から質問を受け、テキストで回答できる。</li>
+          <li>学生は回答ごと、またはセッション終了後に評価と改善案を確認できる。</li>
+          <li>理系学生は研究内容、技術選定、実験、実装、課題解決、再現性、チーム開発に関する深掘り質問を受けられる。</li>
+          <li>学生は過去の練習履歴を確認し、改善傾向を振り返ることができる。</li>
+        </ul>
+
+        <h3>業務・運用要求</h3>
+        <ul>
+          <li>初期版はブラウザ単体で動作し、サーバーを必要としない。</li>
+          <li>外部フレームワーク、外部CSS、外部JavaScript、CDNは使用しない。</li>
+          <li>AI API連携は後続開発で差し替え可能な関数境界を用意する。</li>
+          <li>個人情報の入力は任意とし、保存対象はユーザーが明示的に入力した内容に限定する。</li>
+        </ul>
+      </section>
+
+      <section id="functional">
+        <h2>3. 機能要件</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>機能</th>
+              <th>内容</th>
+              <th>優先度</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>F-01</td>
+              <td>面接設定</td>
+              <td>志望業界、職種、面接タイプ、練習テーマ、難易度、理系深掘り有無を設定する。</td>
+              <td>高</td>
+            </tr>
+            <tr>
+              <td>F-02</td>
+              <td>質問生成</td>
+              <td>設定と回答履歴に応じて、一般質問、研究質問、開発経験質問、深掘り質問をモック生成する。</td>
+              <td>高</td>
+            </tr>
+            <tr>
+              <td>F-03</td>
+              <td>面接チャット</td>
+              <td>AI面接官の質問とユーザー回答を時系列で表示し、回答送信、次質問生成、終了操作を行う。</td>
+              <td>高</td>
+            </tr>
+            <tr>
+              <td>F-04</td>
+              <td>回答評価</td>
+              <td>回答の構造、具体性、論理性、職種適合性、技術説明力をスコア化する。</td>
+              <td>高</td>
+            </tr>
+            <tr>
+              <td>F-05</td>
+              <td>改善提案</td>
+              <td>評価結果に基づき、改善ポイント、追加すべき情報、修正版回答の方向性を提示する。</td>
+              <td>高</td>
+            </tr>
+            <tr>
+              <td>F-06</td>
+              <td>深掘り質問</td>
+              <td>回答に含まれる研究、技術、成果、課題、役割、再現性、数値に応じて追加質問を出す。</td>
+              <td>高</td>
+            </tr>
+            <tr>
+              <td>F-07</td>
+              <td>履歴保存</td>
+              <td>セッション単位で設定、会話ログ、評価、総評、作成日時を<code>localStorage</code>へ保存する。</td>
+              <td>高</td>
+            </tr>
+            <tr>
+              <td>F-08</td>
+              <td>履歴閲覧</td>
+              <td>保存済みセッションの一覧、詳細、削除、再開用コピーを提供する。</td>
+              <td>中</td>
+            </tr>
+            <tr>
+              <td>F-09</td>
+              <td>リセット</td>
+              <td>現在のセッションを破棄し、設定画面から新規練習を開始できる。</td>
+              <td>中</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="non-functional">
+        <h2>4. 非機能要件</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>分類</th>
+              <th>要件</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>操作性</td>
+              <td>主要操作は設定開始、回答送信、フィードバック確認、履歴確認の4系統に整理し、初回利用でも迷わない画面構成にする。</td>
+            </tr>
+            <tr>
+              <td>応答性</td>
+              <td>モックAI応答は送信後1秒以内に表示する。疑似的な考え中表示を入れる場合も2秒を超えない。</td>
+            </tr>
+            <tr>
+              <td>可用性</td>
+              <td>ローカルHTMLをブラウザで開くだけで利用できる。ネットワーク未接続でも動作する。</td>
+            </tr>
+            <tr>
+              <td>保守性</td>
+              <td>AI処理、評価処理、保存処理、画面描画処理を関数単位で分離し、後続でAPI実装に置換しやすくする。</td>
+            </tr>
+            <tr>
+              <td>アクセシビリティ</td>
+              <td>フォーム要素にはラベルを付与し、キーボード操作と十分な色コントラストを確保する。</td>
+            </tr>
+            <tr>
+              <td>セキュリティ</td>
+              <td>外部通信は行わない。入力値は<code>textContent</code>相当で描画し、HTMLとして解釈しない。</td>
+            </tr>
+            <tr>
+              <td>データ保護</td>
+              <td>保存データはブラウザ内に限定する。履歴削除機能を提供し、個人情報入力を必須にしない。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="screens">
+        <h2>5. 画面構成</h2>
+        <h3>設定画面</h3>
+        <ul>
+          <li>入力項目: 志望業界、職種、企業名任意、面接タイプ、難易度、練習テーマ、理系深掘りモード。</li>
+          <li>理系深掘り項目: 研究分野、研究概要、使用技術、開発経験、チーム規模、成果指標。</li>
+          <li>操作: 「面接を開始」「設定をリセット」。</li>
+        </ul>
+
+        <h3>面接チャット画面</h3>
+        <ul>
+          <li>上部: 現在の面接設定、質問数、経過状態。</li>
+          <li>中央: AI面接官とユーザーのメッセージ履歴。</li>
+          <li>下部: 回答入力欄、送信ボタン、回答スキップ、面接終了ボタン。</li>
+          <li>補助表示: 直近回答への簡易評価、次に意識する観点。</li>
+        </ul>
+
+        <h3>フィードバック画面</h3>
+        <ul>
+          <li>総合スコア、評価観点別スコア、強み、改善点、深掘り不足ポイントを表示する。</li>
+          <li>回答ごとのフィードバック、追加質問、修正版回答の方向性を表示する。</li>
+          <li>操作: 「履歴に保存」「もう一度練習」「履歴を見る」。</li>
+        </ul>
+
+        <h3>履歴画面</h3>
+        <ul>
+          <li>セッション一覧: 日時、テーマ、職種、総合スコア、質問数。</li>
+          <li>詳細表示: 設定、会話ログ、評価、改善メモ。</li>
+          <li>操作: 詳細表示、削除、全履歴削除、同じ設定で新規練習。</li>
+        </ul>
+      </section>
+
+      <section id="transitions">
+        <h2>6. 画面遷移</h2>
+        <div class="flow" aria-label="画面遷移">
+          <div><strong>設定</strong>条件入力後、面接開始でチャットへ遷移。</div>
+          <div><strong>面接チャット</strong>回答を蓄積し、終了操作でフィードバックへ遷移。</div>
+          <div><strong>フィードバック</strong>評価確認後、保存または再練習、履歴へ遷移。</div>
+          <div><strong>履歴</strong>過去セッション確認後、同条件で設定またはチャットへ戻る。</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>遷移元</th>
+              <th>操作</th>
+              <th>遷移先</th>
+              <th>データ処理</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>設定</td>
+              <td>面接を開始</td>
+              <td>面接チャット</td>
+              <td>新規セッションを作成し、初回質問を生成する。</td>
+            </tr>
+            <tr>
+              <td>面接チャット</td>
+              <td>回答を送信</td>
+              <td>面接チャット</td>
+              <td>回答評価、深掘り判定、次質問生成を行う。</td>
+            </tr>
+            <tr>
+              <td>面接チャット</td>
+              <td>面接を終了</td>
+              <td>フィードバック</td>
+              <td>総合評価とセッション総評を生成する。</td>
+            </tr>
+            <tr>
+              <td>フィードバック</td>
+              <td>履歴に保存</td>
+              <td>履歴</td>
+              <td>セッションを<code>localStorage</code>へ保存する。</td>
+            </tr>
+            <tr>
+              <td>履歴</td>
+              <td>同じ設定で練習</td>
+              <td>設定または面接チャット</td>
+              <td>過去設定をフォームへ反映する。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="data">
+        <h2>7. データ構造</h2>
+        <p>
+          保存キーは<code>aiInterview.sessions.v1</code>とし、バージョンを含めて将来のデータ移行に備える。
+        </p>
+        <pre><code>{
+  "sessions": [
+    {
+      "id": "session_20260625_001",
+      "createdAt": "2026-06-25T09:00:00.000Z",
+      "updatedAt": "2026-06-25T09:18:00.000Z",
+      "settings": {
+        "industry": "IT",
+        "jobRole": "ソフトウェアエンジニア",
+        "companyName": "",
+        "interviewType": "技術面接",
+        "difficulty": "standard",
+        "theme": "研究内容と開発経験",
+        "scienceMode": true,
+        "researchField": "機械学習",
+        "researchSummary": "画像認識モデルの精度改善",
+        "technologies": ["Python", "PyTorch", "OpenCV"],
+        "developmentExperience": "Webアプリ開発",
+        "teamSize": 4,
+        "achievementMetric": "推論精度を5%改善"
+      },
+      "messages": [
+        {
+          "id": "msg_001",
+          "role": "interviewer",
+          "type": "question",
+          "text": "研究内容を、専門外の面接官にも伝わるように説明してください。",
+          "createdAt": "2026-06-25T09:01:00.000Z",
+          "questionCategory": "research_overview"
+        },
+        {
+          "id": "msg_002",
+          "role": "candidate",
+          "type": "answer",
+          "text": "私は画像認識モデルの精度改善に取り組みました...",
+          "createdAt": "2026-06-25T09:03:00.000Z",
+          "evaluation": {
+            "total": 74,
+            "structure": 70,
+            "specificity": 78,
+            "logic": 75,
+            "jobFit": 72,
+            "technicalDepth": 76,
+            "strengths": ["技術名と成果が示されている"],
+            "improvements": ["課題設定と自分の役割を先に述べる"],
+            "followUpQuestions": ["精度改善のボトルネックは何でしたか？"],
+            "revisionDirection": "結論、課題、担当範囲、工夫、成果の順に再構成する"
+          }
+        }
+      ],
+      "summary": {
+        "totalScore": 76,
+        "questionCount": 6,
+        "answerCount": 6,
+        "overallComment": "技術要素は伝わるが、面接回答としての構造化に改善余地がある。",
+        "nextPracticeTheme": "研究の意義と自分の貢献を短く説明する"
+      }
+    }
+  ]
+}</code></pre>
+      </section>
+
+      <section id="conversation">
+        <h2>8. AIチャットの会話設計</h2>
+        <h3>面接官ペルソナ</h3>
+        <ul>
+          <li>基本姿勢: 丁寧だが実務的。曖昧な回答には具体化を求める。</li>
+          <li>一般面接: 志望動機、自己PR、ガクチカ、失敗経験、キャリア観を確認する。</li>
+          <li>理系深掘り: 研究背景、仮説、手法、検証、技術選定、再現性、自分の貢献を確認する。</li>
+          <li>開発経験: 要件、担当範囲、設計判断、実装上の課題、テスト、運用、チーム連携を確認する。</li>
+        </ul>
+
+        <h3>質問カテゴリ</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>カテゴリ</th>
+              <th>代表質問</th>
+              <th>深掘り観点</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>志望動機</td>
+              <td>当社またはこの職種を志望する理由を教えてください。</td>
+              <td>企業理解、職種理解、経験との接続</td>
+            </tr>
+            <tr>
+              <td>自己PR</td>
+              <td>あなたの強みを、具体的な経験とともに説明してください。</td>
+              <td>再現性、成果、周囲への影響</td>
+            </tr>
+            <tr>
+              <td>研究概要</td>
+              <td>研究内容を専門外の人にも分かるように説明してください。</td>
+              <td>背景、課題、手法、結果、意義</td>
+            </tr>
+            <tr>
+              <td>技術選定</td>
+              <td>その技術や手法を選んだ理由は何ですか。</td>
+              <td>比較検討、制約条件、代替案</td>
+            </tr>
+            <tr>
+              <td>開発経験</td>
+              <td>開発経験の中で、あなたが主に担当した部分を教えてください。</td>
+              <td>役割、設計判断、品質担保、チーム連携</td>
+            </tr>
+            <tr>
+              <td>失敗・課題</td>
+              <td>うまくいかなかった経験と、そこから学んだことを教えてください。</td>
+              <td>原因分析、改善行動、次回への適用</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>会話ルール</h3>
+        <ul>
+          <li>初回質問は設定テーマに最も近いカテゴリから選択する。</li>
+          <li>回答が短い場合は、事実、数値、自分の役割を補う質問を優先する。</li>
+          <li>研究・技術語が含まれる場合は、専門外説明と技術的妥当性の両面を確認する。</li>
+          <li>同じ観点の質問が連続しすぎないよう、一般、技術、行動、価値観をローテーションする。</li>
+          <li>5から8問を標準セッションとし、ユーザーが任意に終了できる。</li>
+        </ul>
+      </section>
+
+      <section id="evaluation">
+        <h2>9. 評価ロジック</h2>
+        <p>
+          初期版では自然言語理解を完全には行わず、回答文字数、構造語、具体語、数値、技術語、役割表現、成果表現の有無をもとにヒューリスティックに評価する。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>観点</th>
+              <th>評価内容</th>
+              <th>主な判定材料</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>構造</td>
+              <td>結論、背景、行動、結果の順に説明できているか。</td>
+              <td>「結論」「理由」「具体的には」「結果」などの構造語、文量の過不足</td>
+            </tr>
+            <tr>
+              <td>具体性</td>
+              <td>抽象論だけでなく、状況、行動、成果が具体化されているか。</td>
+              <td>数値、固有名詞、期間、チーム規模、成果指標</td>
+            </tr>
+            <tr>
+              <td>論理性</td>
+              <td>課題、原因、施策、結果の因果関係が自然か。</td>
+              <td>接続語、課題表現、解決表現、結果表現</td>
+            </tr>
+            <tr>
+              <td>職種適合性</td>
+              <td>志望職種で求められる能力と経験が結び付いているか。</td>
+              <td>職種キーワード、学習意欲、チーム連携、顧客視点</td>
+            </tr>
+            <tr>
+              <td>技術説明力</td>
+              <td>研究・開発経験を、目的、手法、工夫、検証の形で説明できているか。</td>
+              <td>研究背景、技術名、比較検討、検証方法、再現性、自分の担当範囲</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>スコア算出案</h3>
+        <pre><code>totalScore = round(
+  structure * 0.20 +
+  specificity * 0.20 +
+  logic * 0.20 +
+  jobFit * 0.20 +
+  technicalDepth * 0.20
+)</code></pre>
+        <p>
+          一般面接モードでは<code>technicalDepth</code>の重みを下げ、自己理解と職種適合性の重みを上げる。理系深掘りモードでは<code>technicalDepth</code>と<code>logic</code>の重みを上げる。
+        </p>
+
+        <h3>フィードバック生成方針</h3>
+        <ul>
+          <li>高評価点は「強み」として明示し、再現すべき回答パターンを示す。</li>
+          <li>低評価点は「次に足す情報」として具体化し、人格評価に見えない表現にする。</li>
+          <li>修正版の方向性は全文代筆ではなく、回答構成と含める要素を提示する。</li>
+          <li>深掘り質問は不足している観点を1から3問に絞る。</li>
+        </ul>
+      </section>
+
+      <section id="vv">
+        <h2>10. V&amp;V基準</h2>
+        <h3>Verification: 仕様どおり作られているか</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>項目</th>
+              <th>確認基準</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>画面</td>
+              <td>設定、面接チャット、フィードバック、履歴の4画面へ移動できる。</td>
+            </tr>
+            <tr>
+              <td>保存</td>
+              <td>セッション保存後、ブラウザを再読み込みしても履歴が表示される。</td>
+            </tr>
+            <tr>
+              <td>モックAI</td>
+              <td>設定内容と直近回答に応じて質問、評価、改善案が生成される。</td>
+            </tr>
+            <tr>
+              <td>外部依存</td>
+              <td>HTML、CSS、JavaScriptのみで構成され、外部フレームワークやCDNを参照しない。</td>
+            </tr>
+            <tr>
+              <td>入力安全性</td>
+              <td>ユーザー入力にHTMLタグを含めても、画面上でスクリプトとして実行されない。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Validation: 利用者の目的を満たすか</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>シナリオ</th>
+              <th>合格基準</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>一般面接練習</td>
+              <td>志望動機や自己PRに対し、具体性と構造の改善案が得られる。</td>
+            </tr>
+            <tr>
+              <td>研究内容の説明練習</td>
+              <td>研究背景、手法、結果、意義、自分の貢献に関する深掘り質問が出る。</td>
+            </tr>
+            <tr>
+              <td>開発経験の説明練習</td>
+              <td>担当範囲、技術選定、課題解決、チーム連携に関する評価が得られる。</td>
+            </tr>
+            <tr>
+              <td>振り返り</td>
+              <td>履歴から過去の回答とスコアを確認し、次の練習テーマを把握できる。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="prototype">
+        <h2>11. HTML/CSS/JavaScriptプロトタイプ仕様</h2>
+        <h3>ファイル構成</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>ファイル</th>
+              <th>役割</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>index.html</code></td>
+              <td>アプリ本体。HTML、CSS、JavaScriptを1ファイルにまとめてもよい。</td>
+            </tr>
+            <tr>
+              <td><code>specification.html</code></td>
+              <td>本仕様書。開発者間の合意と検証基準として使用する。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>HTML方針</h3>
+        <ul>
+          <li>画面ごとに<code>section</code>を用意し、現在画面のみ表示する。</li>
+          <li>フォーム入力には<code>label</code>、<code>input</code>、<code>select</code>、<code>textarea</code>を使用する。</li>
+          <li>チャットログは<code>ol</code>または<code>div</code>のリスト構造で表現し、ロール別にスタイルを分ける。</li>
+          <li>フィードバックはスコア、強み、改善点、深掘り質問、修正版の方向性の順に表示する。</li>
+        </ul>
+
+        <h3>CSS方針</h3>
+        <ul>
+          <li>業務ツールとして使いやすい、落ち着いた配色と十分な余白を採用する。</li>
+          <li>画面幅が狭い場合は1カラム、広い場合は設定や履歴詳細を2カラムにする。</li>
+          <li>チャット入力欄、送信ボタン、終了ボタンは常に見つけやすい位置に配置する。</li>
+          <li>スコアは数値だけでなくバーやラベルで視認しやすくする。</li>
+        </ul>
+
+        <h3>JavaScript方針</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>関数名案</th>
+              <th>責務</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>initApp()</code></td>
+              <td>初期表示、履歴読み込み、イベント登録を行う。</td>
+            </tr>
+            <tr>
+              <td><code>startSession(settings)</code></td>
+              <td>設定値から新規セッションを作り、初回質問を生成する。</td>
+            </tr>
+            <tr>
+              <td><code>generateMockQuestion(session)</code></td>
+              <td>設定と回答履歴から次の質問を選ぶ。</td>
+            </tr>
+            <tr>
+              <td><code>evaluateAnswer(answer, session)</code></td>
+              <td>回答を観点別に採点し、改善案と深掘り質問を返す。</td>
+            </tr>
+            <tr>
+              <td><code>renderChat(session)</code></td>
+              <td>面接チャット画面を再描画する。</td>
+            </tr>
+            <tr>
+              <td><code>buildSessionSummary(session)</code></td>
+              <td>回答別評価から総合評価を作成する。</td>
+            </tr>
+            <tr>
+              <td><code>saveSession(session)</code></td>
+              <td><code>localStorage</code>へ保存する。</td>
+            </tr>
+            <tr>
+              <td><code>loadSessions()</code></td>
+              <td><code>localStorage</code>から履歴一覧を読み込む。</td>
+            </tr>
+            <tr>
+              <td><code>deleteSession(id)</code></td>
+              <td>指定セッションを履歴から削除する。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="warning">
+          実AI APIへ接続する場合は、ブラウザにAPIキーを埋め込まない。後続版ではサーバー側プロキシまたは安全なバックエンドを経由する。
+        </div>
+      </section>
+
+      <section id="next">
+        <h2>12. 次の開発手順</h2>
+        <ol>
+          <li><code>index.html</code>に4画面の静的レイアウトを実装する。</li>
+          <li>設定フォーム、画面切り替え、チャット入力の基本イベントを実装する。</li>
+          <li>質問テンプレートと理系深掘り用テンプレートを定義する。</li>
+          <li><code>evaluateAnswer()</code>で回答文字数、構造語、数値、技術語に基づくモック評価を実装する。</li>
+          <li>フィードバック画面で観点別スコア、改善案、深掘り質問、修正版方向性を表示する。</li>
+          <li><code>localStorage</code>による保存、読み込み、削除を実装する。</li>
+          <li>V&amp;V基準に沿って、一般面接、研究説明、開発経験の3シナリオで手動検証する。</li>
+          <li>将来のAI API接続に備え、モック関数の入出力形式を固定し、置換しやすい構造にする。</li>
+        </ol>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    AI面接練習アプリ仕様書。外部ライブラリを使用しない静的HTMLとして作成。
+  </footer>
+</body>
+</html>

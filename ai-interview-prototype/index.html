@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI面接練習</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./script.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="app-kicker">AI Interview Practice</p>
+      <h1>AI面接練習</h1>
+    </div>
+    <nav class="header-actions" aria-label="画面操作">
+      <button id="showWorkspaceBtn" class="button button-secondary" type="button">ES管理</button>
+      <button id="showHistoryBtn" class="button button-secondary" type="button">履歴</button>
+      <button id="backToSetupBtn" class="button button-ghost" type="button">面接設定</button>
+      <button id="switchAccountBtn" class="button button-ghost" type="button">アカウント切替</button>
+    </nav>
+  </header>
+
+  <main class="app-shell">
+    <section id="accountView" class="view-panel active-view" aria-labelledby="accountTitle">
+      <div class="section-heading">
+        <p class="section-label">Account</p>
+        <h2 id="accountTitle">ローカル個人アカウント</h2>
+      </div>
+
+      <div class="account-layout">
+        <form id="accountForm" class="account-form">
+          <div class="field">
+            <label for="accountNameInput">表示名</label>
+            <input id="accountNameInput" name="accountName" type="text" autocomplete="name" placeholder="例: 山田 太郎">
+          </div>
+          <div class="field">
+            <label for="accountEmailInput">メール 任意</label>
+            <input id="accountEmailInput" name="accountEmail" type="email" autocomplete="email" placeholder="例: taro@example.com">
+          </div>
+          <div class="form-actions">
+            <button id="createAccountBtn" class="button button-primary" type="button">作成して始める</button>
+          </div>
+        </form>
+
+        <section class="list-panel" aria-labelledby="accountListTitle">
+          <h3 id="accountListTitle">既存アカウント</h3>
+          <div id="accountList" class="stacked-list"></div>
+        </section>
+      </div>
+      <p id="googleAccountNote">データはこのブラウザの localStorage に保存されます。Google連携は未実装です。</p>
+    </section>
+
+    <section id="workspaceView" class="view-panel" aria-labelledby="workspaceTitle" hidden>
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="section-label">Workspace</p>
+          <h2 id="workspaceTitle">企業・ES管理</h2>
+        </div>
+        <p class="active-account">選択中: <strong id="activeAccountName">未選択</strong></p>
+      </div>
+
+      <div class="workspace-layout">
+        <section class="workspace-column" aria-labelledby="companyPanelTitle">
+          <div class="panel-heading-row">
+            <h3 id="companyPanelTitle">企業情報</h3>
+          </div>
+          <form id="companyForm" class="compact-form">
+            <div class="field">
+              <label for="companyNameInput">企業名</label>
+              <input id="companyNameInput" name="companyName" type="text" placeholder="例: 株式会社サンプル">
+            </div>
+            <div class="field">
+              <label for="companyRoleInput">職種・部署</label>
+              <input id="companyRoleInput" name="companyRole" type="text" placeholder="例: 開発職 / 研究職">
+            </div>
+            <div class="field">
+              <label for="companyStageInput">応募区分</label>
+              <input id="companyStageInput" name="companyStage" type="text" placeholder="例: インターン / 本選考 / 一次面接">
+            </div>
+            <div class="field">
+              <label for="companyNotesInput">企業メモ</label>
+              <textarea id="companyNotesInput" name="companyNotes" rows="4" placeholder="事業内容、求める人物像、面接で聞かれそうな点など"></textarea>
+            </div>
+            <div class="form-actions">
+              <button id="saveCompanyBtn" class="button button-primary" type="button">企業を保存</button>
+            </div>
+          </form>
+
+          <div class="list-block">
+            <h3>企業一覧</h3>
+            <div id="companyList" class="stacked-list"></div>
+          </div>
+        </section>
+
+        <section class="workspace-column" aria-labelledby="selectedCompanyTitle">
+          <div class="panel-heading-row">
+            <h3 id="selectedCompanyTitle">企業を選択してください</h3>
+          </div>
+          <form id="esForm" class="compact-form">
+            <div class="field">
+              <label for="esQuestionInput">ES設問</label>
+              <textarea id="esQuestionInput" name="esQuestion" rows="4" placeholder="例: 学生時代に力を入れたことを教えてください。"></textarea>
+            </div>
+            <div class="inline-fields">
+              <div class="field">
+                <label for="esMaxCharsInput">文字数制限</label>
+                <input id="esMaxCharsInput" name="esMaxChars" type="number" min="0" step="50" placeholder="例: 400">
+              </div>
+              <div class="field">
+                <label for="esCategorySelect">カテゴリ</label>
+                <select id="esCategorySelect" name="esCategory">
+                  <option value="self_pr">自己PR</option>
+                  <option value="motivation">志望動機</option>
+                  <option value="student_life">ガクチカ</option>
+                  <option value="strength_weakness">長所・短所</option>
+                  <option value="research">研究内容</option>
+                  <option value="development">開発経験</option>
+                  <option value="team">チーム経験</option>
+                  <option value="failure">失敗経験</option>
+                  <option value="career">キャリア</option>
+                  <option value="reverse_question">逆質問</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="esStatusSelect">ステータス</label>
+                <select id="esStatusSelect" name="esStatus">
+                  <option value="draft">下書き</option>
+                  <option value="reviewing">推敲中</option>
+                  <option value="submitted">提出済み</option>
+                  <option value="practice">練習対象</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <div class="label-row">
+                <label for="esAnswerInput">ES回答本文</label>
+                <span id="esCharCount" class="char-count">0文字</span>
+              </div>
+              <textarea id="esAnswerInput" name="esAnswer" rows="8" placeholder="ES回答を入力してください。"></textarea>
+            </div>
+            <div class="form-actions">
+              <button id="saveEsBtn" class="button button-primary" type="button">ESを保存</button>
+            </div>
+          </form>
+
+          <div class="list-block">
+            <h3>選択中企業のES</h3>
+            <div id="esEntryList" class="stacked-list es-entry-list"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="setupView" class="view-panel" aria-labelledby="setupTitle" hidden>
+      <div class="section-heading">
+        <p class="section-label">Setup</p>
+        <h2 id="setupTitle">面接条件の設定</h2>
+      </div>
+
+      <form id="setupForm" class="setup-grid">
+        <div class="field">
+          <label for="companyInput">応募企業</label>
+          <input id="companyInput" name="company" type="text" placeholder="例: 株式会社サンプル">
+        </div>
+        <div class="field">
+          <label for="roleInput">応募職種</label>
+          <input id="roleInput" name="role" type="text" placeholder="例: エンジニア職 / 研究職">
+        </div>
+        <div class="field">
+          <label for="interviewTypeSelect">面接タイプ</label>
+          <select id="interviewTypeSelect" name="interviewType">
+            <option value="first">一次面接</option>
+            <option value="final">最終面接</option>
+            <option value="deep_dive">深掘り面接</option>
+            <option value="technical">技術面接</option>
+            <option value="research">研究面接</option>
+            <option value="intern">インターン面接</option>
+            <option value="hr">人事面接</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="targetTypeSelect">対象区分</label>
+          <select id="targetTypeSelect" name="targetType">
+            <option value="new-graduate">新卒</option>
+            <option value="graduate-school">大学院生</option>
+            <option value="intern">インターン</option>
+            <option value="technical-role">技術職応募</option>
+            <option value="research-role">研究職応募</option>
+            <option value="development-role">開発職応募</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="categorySelect">質問カテゴリ</label>
+          <select id="categorySelect" name="category">
+            <option value="self_pr">自己PR</option>
+            <option value="motivation">志望動機</option>
+            <option value="student_life">ガクチカ</option>
+            <option value="strength_weakness">長所・短所</option>
+            <option value="research">研究内容</option>
+            <option value="development">開発経験</option>
+            <option value="team">チーム経験</option>
+            <option value="failure">失敗経験</option>
+            <option value="career">キャリア</option>
+            <option value="reverse_question">逆質問</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="interviewerTypeSelect">AI面接官タイプ</label>
+          <select id="interviewerTypeSelect" name="interviewerType">
+            <option value="friendly">優しめ</option>
+            <option value="strict">厳しめ</option>
+            <option value="deep_dive">深掘り重視</option>
+            <option value="technical">技術重視</option>
+            <option value="research">研究重視</option>
+            <option value="coach">改善コーチ</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="questionCountSelect">質問数</label>
+          <select id="questionCountSelect" name="questionCount">
+            <option value="3">3問</option>
+            <option value="5" selected>5問</option>
+            <option value="7">7問</option>
+            <option value="10">10問</option>
+          </select>
+        </div>
+        <div class="field field-wide">
+          <label for="userProfileInput">自分のメモ</label>
+          <textarea id="userProfileInput" name="userProfile" rows="7" placeholder="学歴、研究、開発経験、強み、志望理由、今日の面接で詰まった質問など"></textarea>
+        </div>
+        <div id="sourceEsPreview" class="source-es-preview field-wide" hidden>
+          <p class="panel-label">Selected ES</p>
+          <h3 id="sourceEsPreviewTitle">使用するES</h3>
+          <p id="sourceEsPreviewQuestion"></p>
+          <p id="sourceEsPreviewAnswer"></p>
+        </div>
+        <div class="form-actions field-wide">
+          <button id="startInterviewBtn" class="button button-primary" type="button">面接を開始</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="interviewView" class="view-panel" aria-labelledby="interviewTitle" hidden>
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="section-label">Interview</p>
+          <h2 id="interviewTitle">面接チャット</h2>
+        </div>
+        <p id="progressText" class="progress-text">質問 0 / 0</p>
+      </div>
+
+      <div class="interview-layout">
+        <div class="question-area" aria-live="polite">
+          <p class="panel-label">AI質問</p>
+          <div id="currentQuestion" class="question-card">設定を完了すると、ここに質問が表示されます。</div>
+          <div class="follow-up-box">
+            <p class="panel-label">直前回答への深掘り</p>
+            <p id="followUpQuestion">回答後、追加で確認されやすい質問が表示されます。</p>
+          </div>
+        </div>
+
+        <aside class="timeline-panel" aria-labelledby="timelineTitle">
+          <div class="panel-heading-row">
+            <p id="timelineTitle" class="panel-label">会話ログ</p>
+          </div>
+          <div id="chatTimeline" class="chat-timeline"></div>
+        </aside>
+      </div>
+
+      <div class="answer-panel">
+        <label for="answerInput">あなたの回答</label>
+        <textarea id="answerInput" name="answer" rows="6" placeholder="面接で話すつもりで回答してください。Ctrl + Enter でも送信できます。"></textarea>
+        <div class="voice-input-panel" aria-label="音声入力">
+          <div class="voice-input-actions">
+            <button id="startVoiceInputBtn" class="button button-secondary" type="button" aria-controls="answerInput voiceTranscriptPreview">音声入力を開始</button>
+            <button id="stopVoiceInputBtn" class="button button-secondary" type="button" aria-controls="answerInput voiceTranscriptPreview" disabled>停止</button>
+          </div>
+          <p id="voiceStatus" class="voice-status" role="status" aria-live="polite">音声入力は待機中です。対応状況を確認しています。</p>
+          <div id="voiceTranscriptPreview" class="voice-transcript-preview voice-preview" aria-live="polite" aria-label="音声認識の暫定文字起こし">
+            認識中の文字起こしがここに表示されます。
+          </div>
+        </div>
+        <div id="feedbackSummary" class="inline-feedback" aria-live="polite">回答ごとの簡易フィードバックがここに表示されます。</div>
+        <div class="form-actions">
+          <button id="submitAnswerBtn" class="button button-primary" type="button">回答を送信</button>
+          <button id="finishInterviewBtn" class="button button-secondary" type="button">面接を終了</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="feedbackView" class="view-panel" aria-labelledby="feedbackTitle" hidden>
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="section-label">Feedback</p>
+          <h2 id="feedbackTitle">フィードバック</h2>
+        </div>
+        <div id="finalScore" class="score-badge">-- / 100</div>
+      </div>
+
+      <div class="feedback-grid">
+        <section class="feedback-block score-block" aria-labelledby="scoreBreakdownTitle">
+          <h3 id="scoreBreakdownTitle">評価軸ごとの点数</h3>
+          <div id="scoreBreakdown" class="score-breakdown"></div>
+        </section>
+        <section class="feedback-block" aria-labelledby="goodPointsTitle">
+          <h3 id="goodPointsTitle">良い点</h3>
+          <ul id="goodPointsList" class="feedback-list"></ul>
+        </section>
+        <section class="feedback-block" aria-labelledby="improvementTitle">
+          <h3 id="improvementTitle">改善点</h3>
+          <ul id="improvementList" class="feedback-list"></ul>
+        </section>
+        <section class="feedback-block" aria-labelledby="deepDiveTitle">
+          <h3 id="deepDiveTitle">深掘りされやすい点</h3>
+          <ul id="deepDiveList" class="feedback-list"></ul>
+        </section>
+        <section class="feedback-block field-wide" aria-labelledby="revisionTitle">
+          <h3 id="revisionTitle">修正方針</h3>
+          <div id="revisionDirection" class="revision-box"></div>
+        </section>
+        <section class="feedback-block field-wide" aria-labelledby="nextPracticeTitle">
+          <h3 id="nextPracticeTitle">次に練習する質問</h3>
+          <ul id="nextPracticeList" class="feedback-list two-column-list"></ul>
+        </section>
+      </div>
+
+      <div class="form-actions">
+        <button id="restartBtn" class="button button-primary" type="button">もう一度練習</button>
+      </div>
+    </section>
+
+    <section id="historyView" class="view-panel" aria-labelledby="historyTitle" hidden>
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="section-label">History</p>
+          <h2 id="historyTitle">練習履歴</h2>
+        </div>
+        <button id="clearHistoryBtn" class="button button-danger" type="button">履歴を全削除</button>
+      </div>
+
+      <div class="history-layout">
+        <section class="history-list-panel" aria-labelledby="historyListTitle">
+          <h3 id="historyListTitle">過去ログ一覧</h3>
+          <div id="historyList" class="history-list"></div>
+        </section>
+
+        <section class="history-detail-panel" aria-labelledby="historyDetailTitle">
+          <div class="panel-heading-row">
+            <h3 id="historyDetailTitle">詳細表示</h3>
+            <button id="deleteHistoryItemBtn" class="button button-danger button-small" type="button">この履歴を削除</button>
+          </div>
+          <div id="historyDetail" class="history-detail"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
