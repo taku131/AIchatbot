@@ -202,11 +202,11 @@
 
       <form id="setupForm" class="setup-grid">
         <div class="field field-wide">
-          <label for="setupEsSelect">保存済みESから選択</label>
-          <select id="setupEsSelect" name="setupEs">
-            <option value="">ESを選択せずに設定する</option>
+          <label for="setupCompanySelect">保存済み企業・ESセットから選択</label>
+          <select id="setupCompanySelect" name="setupCompany">
+            <option value="">企業を選択せずに設定する</option>
           </select>
-          <p class="field-help">企業・ES管理で保存したESを選ぶと、応募企業、応募職種、カテゴリ、ES本文が自動で反映されます。</p>
+          <p class="field-help">企業・ES管理で保存した企業を選ぶと、応募企業、応募職種、その企業に紐づく全ESが面接に使われます。</p>
         </div>
         <div class="field">
           <label for="companyInput">応募企業</label>
@@ -279,8 +279,8 @@
           <textarea id="userProfileInput" name="userProfile" rows="7" placeholder="学歴、研究、開発経験、強み、志望理由、今日の面接で詰まった質問など"></textarea>
         </div>
         <div id="sourceEsPreview" class="source-es-preview field-wide" hidden>
-          <p class="panel-label">Selected ES</p>
-          <h3 id="sourceEsPreviewTitle">使用するES</h3>
+          <p class="panel-label">Interview Dataset</p>
+          <h3 id="sourceEsPreviewTitle">使用する企業・ESセット</h3>
           <p id="sourceEsPreviewQuestion"></p>
           <p id="sourceEsPreviewAnswer"></p>
         </div>

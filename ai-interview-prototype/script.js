@@ -132,7 +132,7 @@
     selectedHistoryId: null,
     activeAccountId: null,
     selectedCompanyId: null,
-    pendingSourceEsEntry: null,
+    pendingSourceCompanyId: null,
     isBusy: false
   };
 
@@ -280,6 +280,12 @@
     });
   }
 
+  function getCompanyEsEntries(companyId, accountId) {
+    return loadEsEntries().filter(function (entry) {
+      return entry.companyId === companyId && (!accountId || entry.accountId === accountId);
+    });
+  }
+
   function findCompany(companyId, accountId) {
     return loadCompanies().find(function (company) {
       return company.id === companyId && (!accountId || company.accountId === accountId);
@@ -348,7 +354,7 @@
     setText("activeAccountName", account ? account.displayName : "未選択");
     renderCompanies();
     renderEsEntries();
-    renderSetupEsSelect();
+    renderSetupCompanySelect();
     updateEsCharCount();
   }
 
@@ -447,7 +453,7 @@
       useButton.className = "button button-secondary button-small";
       useButton.dataset.esEntryId = entry.id;
       useButton.dataset.action = "use-es-entry";
-      useButton.textContent = "このESで面接練習";
+      useButton.textContent = "この企業のESで面接練習";
       actions.appendChild(useButton);
 
       item.appendChild(actions);
@@ -455,35 +461,35 @@
     });
   }
 
-  function renderSetupEsSelect() {
-    var select = $("setupEsSelect");
+  function renderSetupCompanySelect() {
+    var select = $("setupCompanySelect");
     if (!select) {
       return;
     }
-    var selectedId = appState.pendingSourceEsEntry ? appState.pendingSourceEsEntry.id : "";
-    var entries = appState.activeAccountId ? getAccountEsEntries(appState.activeAccountId) : [];
+    var selectedId = appState.pendingSourceCompanyId || appState.selectedCompanyId || "";
+    var companies = appState.activeAccountId ? getAccountCompanies(appState.activeAccountId) : [];
     select.textContent = "";
 
     var emptyOption = document.createElement("option");
     emptyOption.value = "";
-    emptyOption.textContent = "ESを選択せずに設定する";
+    emptyOption.textContent = "企業を選択せずに設定する";
     select.appendChild(emptyOption);
 
-    entries.forEach(function (entry) {
-      var company = findCompany(entry.companyId, entry.accountId);
+    companies.forEach(function (company) {
+      var esCount = getCompanyEsEntries(company.id, company.accountId).length;
       var option = document.createElement("option");
-      option.value = entry.id;
+      option.value = company.id;
       option.textContent = [
-        company ? company.companyName : "企業未設定",
-        company && company.role ? company.role : "職種未設定",
-        formatCategoryLabel(entry.category),
-        String(entry.questionText || "").slice(0, 36)
+        company.companyName || "企業名未設定",
+        company.role || "職種未設定",
+        company.stage || "応募区分未設定",
+        "ES " + esCount + "件"
       ].filter(Boolean).join(" / ");
       select.appendChild(option);
     });
 
-    select.value = entries.some(function (entry) {
-      return entry.id === selectedId;
+    select.value = companies.some(function (company) {
+      return company.id === selectedId;
     }) ? selectedId : "";
   }
 
@@ -539,7 +545,7 @@
     if (!account) {
       rememberActiveAccount(null);
       appState.selectedCompanyId = null;
-      appState.pendingSourceEsEntry = null;
+      appState.pendingSourceCompanyId = null;
       renderAccounts();
       renderWorkspace();
       showView("accountView");
@@ -549,7 +555,7 @@
     rememberActiveAccount(account.id);
     var companies = getAccountCompanies(account.id);
     appState.selectedCompanyId = companies.length ? companies[0].id : null;
-    appState.pendingSourceEsEntry = null;
+    appState.pendingSourceCompanyId = null;
     renderAccounts();
     renderWorkspace();
     showView("workspaceView");
@@ -631,7 +637,7 @@
     setValue("esAnswerInput", "");
     updateEsCharCount();
     renderEsEntries();
-    renderSetupEsSelect();
+    renderSetupCompanySelect();
   }
 
   function updateEsCharCount() {
@@ -662,11 +668,12 @@
       return;
     }
     appState.selectedCompanyId = company.id;
-    appState.pendingSourceEsEntry = null;
+    appState.pendingSourceCompanyId = null;
     applyCompanyToSetup(company);
-    renderSourceEsPreview(null);
+    renderSourceEsPreview(null, []);
     renderCompanies();
     renderEsEntries();
+    renderSetupCompanySelect();
   }
 
   function findEsEntry(entryId) {
@@ -675,58 +682,57 @@
     }) || null;
   }
 
-  function summarizeSourceEsEntry(entry) {
-    if (!entry) {
-      return null;
-    }
-    return {
-      id: entry.id,
-      accountId: entry.accountId,
-      companyId: entry.companyId,
-      questionText: entry.questionText,
-      answerText: entry.answerText,
-      maxChars: entry.maxChars,
-      category: entry.category,
-      status: entry.status,
-      createdAt: entry.createdAt,
-      updatedAt: entry.updatedAt
-    };
+  function summarizeSourceEsEntries(entries) {
+    return (entries || []).map(function (entry) {
+      return {
+        id: entry.id,
+        accountId: entry.accountId,
+        companyId: entry.companyId,
+        questionText: entry.questionText,
+        answerText: entry.answerText,
+        maxChars: entry.maxChars,
+        category: entry.category,
+        status: entry.status,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt
+      };
+    });
   }
 
-  function applyEsEntryToSettings(entry) {
-    var company = findCompany(entry.companyId, entry.accountId) || {};
+  function applyCompanyDatasetToSettings(companyId) {
+    var company = findCompany(companyId, appState.activeAccountId) || {};
+    var entries = company.id ? getCompanyEsEntries(company.id, company.accountId) : [];
     if (company.id) {
       appState.selectedCompanyId = company.id;
+      appState.pendingSourceCompanyId = company.id;
     }
     applyCompanyToSetup(company);
-    setValue("categorySelect", normalizeCategory(entry.category || DEFAULT_SETTINGS.category));
-    setValue("userProfileInput", buildProfileWithSourceEs(entry));
-    appState.pendingSourceEsEntry = summarizeSourceEsEntry(entry);
+    if (entries.length) {
+      setValue("categorySelect", normalizeCategory(entries[0].category || DEFAULT_SETTINGS.category));
+    }
+    setValue("userProfileInput", buildProfileWithCompanyEs(company, entries));
     renderCompanies();
     renderEsEntries();
-    renderSetupEsSelect();
-    renderSourceEsPreview(appState.pendingSourceEsEntry);
+    renderSetupCompanySelect();
+    renderSourceEsPreview(company, entries);
     showView("setupView");
   }
 
   function useEsEntry(entryId) {
     var entry = findEsEntry(entryId);
     if (entry) {
-      applyEsEntryToSettings(entry);
+      applyCompanyDatasetToSettings(entry.companyId);
     }
   }
 
-  function handleSetupEsSelectChange() {
-    var entryId = getValue("setupEsSelect", "");
-    if (!entryId) {
-      appState.pendingSourceEsEntry = null;
-      renderSourceEsPreview(null);
+  function handleSetupCompanySelectChange() {
+    var companyId = getValue("setupCompanySelect", "");
+    if (!companyId) {
+      appState.pendingSourceCompanyId = null;
+      renderSourceEsPreview(null, []);
       return;
     }
-    var entry = findEsEntry(entryId);
-    if (entry) {
-      applyEsEntryToSettings(entry);
-    }
+    applyCompanyDatasetToSettings(companyId);
   }
 
   function applyCompanyToSetup(company) {
@@ -737,32 +743,47 @@
     setValue("roleInput", company.role || "");
   }
 
-  function buildProfileWithSourceEs(entry) {
+  function buildProfileWithCompanyEs(company, entries) {
     var lines = [];
-    lines.push("ES設問: " + (entry.questionText || ""));
-    lines.push("ES回答: " + (entry.answerText || ""));
+    if (company && company.notes) {
+      lines.push("企業メモ: " + company.notes);
+    }
+    (entries || []).forEach(function (entry, index) {
+      lines.push("ES" + (index + 1) + " 設問: " + (entry.questionText || ""));
+      lines.push("ES" + (index + 1) + " 回答: " + (entry.answerText || ""));
+    });
     return lines.join("\n");
   }
 
-  function renderSourceEsPreview(entry) {
+  function renderSourceEsPreview(company, entries) {
     var preview = $("sourceEsPreview");
     if (!preview) {
       return;
     }
-    preview.hidden = !entry;
-    if (!entry) {
+    var safeEntries = entries || [];
+    preview.hidden = !company && !safeEntries.length;
+    if (!company && !safeEntries.length) {
       setText("sourceEsPreviewQuestion", "");
       setText("sourceEsPreviewAnswer", "");
       return;
     }
-    setText("sourceEsPreviewQuestion", "設問: " + (entry.questionText || "未入力"));
-    setText("sourceEsPreviewAnswer", "回答: " + (entry.answerText || "未入力"));
+    setText("sourceEsPreviewQuestion", [
+      "企業: " + (company && company.companyName ? company.companyName : "未設定"),
+      "職種: " + (company && company.role ? company.role : "未設定"),
+      "応募区分: " + (company && company.stage ? company.stage : "未設定"),
+      "ES設問数: " + safeEntries.length
+    ].join(" / "));
+    setText("sourceEsPreviewAnswer", safeEntries.length
+      ? safeEntries.map(function (entry, index) {
+        return "ES" + (index + 1) + ": " + (entry.questionText || "設問未入力");
+      }).join(" / ")
+      : "この企業に保存済みESはまだありません。企業情報のみで面接を開始します。");
   }
 
   function readSettings() {
     return {
       accountId: appState.activeAccountId,
-      companyId: appState.selectedCompanyId,
+      companyId: getValue("setupCompanySelect", "") || null,
       company: getValue("companyInput", ""),
       role: getValue("roleInput", ""),
       interviewType: getValue("interviewTypeSelect", DEFAULT_SETTINGS.interviewType),
@@ -934,7 +955,7 @@
 
   function buildAiContext(settings) {
     var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
-    var source = safeSettings.sourceEsEntry || null;
+    var sourceEntries = Array.isArray(safeSettings.sourceEsEntries) ? safeSettings.sourceEsEntries : [];
     return [
       "応募企業: " + (safeSettings.company || "未設定"),
       "応募職種: " + (safeSettings.role || "未設定"),
@@ -943,8 +964,14 @@
       "カテゴリ: " + formatCategoryLabel(safeSettings.category),
       "面接官タイプ: " + (safeSettings.interviewerType || "未設定"),
       "自己メモ: " + (safeSettings.userProfile || "未入力"),
-      source ? "ES設問: " + (source.questionText || "") : "",
-      source ? "ES回答: " + (source.answerText || "") : ""
+      sourceEntries.length ? "保存済みES一覧:\n" + sourceEntries.map(function (entry, index) {
+        return [
+          "ES" + (index + 1),
+          "カテゴリ: " + formatCategoryLabel(entry.category),
+          "設問: " + (entry.questionText || ""),
+          "回答: " + (entry.answerText || "")
+        ].join("\n");
+      }).join("\n---\n") : "保存済みES: なし"
     ].filter(Boolean).join("\n");
   }
 
@@ -999,8 +1026,8 @@
       : appState.interviewLog && appState.interviewLog.entries
         ? appState.interviewLog.entries.length
         : 0;
-    if (askedCount === 0 && safeSettings.sourceEsEntry) {
-      return makeQuestionSpecific("ESに書いた経験について、背景、あなたの役割、行動、結果を面接で説明してください。", safeSettings);
+    if (askedCount === 0 && Array.isArray(safeSettings.sourceEsEntries) && safeSettings.sourceEsEntries.length) {
+      return makeQuestionSpecific("提出ES全体を踏まえて、特に面接で確認したい経験を一つ選び、背景、あなたの役割、行動、結果を説明してください。", safeSettings);
     }
     var seed = textSeed([
       safeSettings.company,
@@ -1316,22 +1343,35 @@
     }
   }
 
-  async function startInterview(sourceEsEntry) {
-    if (sourceEsEntry && typeof sourceEsEntry.preventDefault === "function") {
-      sourceEsEntry = null;
+  async function startInterview(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
     }
     if (appState.isBusy) {
       return;
     }
     var settings = readSettings();
-    var source = sourceEsEntry || appState.pendingSourceEsEntry;
-    if (source) {
-      settings.sourceEsEntry = summarizeSourceEsEntry(source);
-      settings.companyId = settings.sourceEsEntry.companyId;
-      settings.esEntryId = settings.sourceEsEntry.id;
+    var sourceCompanyId = settings.companyId || appState.pendingSourceCompanyId;
+    var sourceCompany = sourceCompanyId ? findCompany(sourceCompanyId, appState.activeAccountId) : null;
+    var sourceEntries = sourceCompanyId ? getCompanyEsEntries(sourceCompanyId, appState.activeAccountId) : [];
+    if (sourceCompany) {
+      settings.companyId = sourceCompany.id;
+      settings.company = sourceCompany.companyName || settings.company;
+      settings.role = sourceCompany.role || settings.role;
+      settings.companyStage = sourceCompany.stage || "";
+      settings.companyNotes = sourceCompany.notes || "";
+      settings.sourceCompany = {
+        id: sourceCompany.id,
+        accountId: sourceCompany.accountId,
+        companyName: sourceCompany.companyName,
+        role: sourceCompany.role,
+        stage: sourceCompany.stage,
+        notes: sourceCompany.notes
+      };
     }
-    appState.pendingSourceEsEntry = null;
-    renderSourceEsPreview(null);
+    settings.sourceEsEntries = summarizeSourceEsEntries(sourceEntries);
+    appState.pendingSourceCompanyId = sourceCompanyId || null;
+    renderSourceEsPreview(sourceCompany, sourceEntries);
     appState.settings = settings;
     appState.questionIndex = 0;
     appState.finished = false;
@@ -1339,7 +1379,9 @@
       id: makeId("session"),
       accountId: settings.accountId || appState.activeAccountId || null,
       companyId: settings.companyId || null,
-      esEntryId: settings.esEntryId || null,
+      esEntryIds: settings.sourceEsEntries.map(function (entry) {
+        return entry.id;
+      }),
       settings: settings,
       messages: [],
       evaluations: [],
@@ -1569,9 +1611,12 @@
     });
   }
 
-  function getLogSourceEsEntry(log) {
+  function getLogSourceEsEntries(log) {
     var settings = log.settings || {};
-    return settings.sourceEsEntry || null;
+    if (Array.isArray(settings.sourceEsEntries)) {
+      return settings.sourceEsEntries;
+    }
+    return settings.sourceEsEntry ? [settings.sourceEsEntry] : [];
   }
 
   function renderHistoryDetail(log) {
@@ -1583,7 +1628,7 @@
     detail.textContent = "";
     var title = document.createElement("h3");
     var settings = log.settings || {};
-    var sourceEsEntry = getLogSourceEsEntry(log);
+    var sourceEsEntries = getLogSourceEsEntries(log);
     var entries = getLogEntries(log);
     title.textContent = getLogCompanyName(log) + " / " + (settings.role || "職種未設定");
     detail.appendChild(title);
@@ -1598,18 +1643,20 @@
     ].join(" / ");
     detail.appendChild(meta);
 
-    if (sourceEsEntry) {
+    if (sourceEsEntries.length) {
       var esBlock = document.createElement("section");
       esBlock.className = "history-detail-section";
       var esTitle = document.createElement("h4");
-      esTitle.textContent = "使用したES";
-      var esQuestion = document.createElement("p");
-      var esAnswer = document.createElement("p");
-      esQuestion.textContent = "設問: " + (sourceEsEntry.questionText || "未入力");
-      esAnswer.textContent = "回答: " + (sourceEsEntry.answerText || "未入力");
       esBlock.appendChild(esTitle);
-      esBlock.appendChild(esQuestion);
-      esBlock.appendChild(esAnswer);
+      esTitle.textContent = "使用したES一覧";
+      sourceEsEntries.forEach(function (sourceEsEntry, index) {
+        var esQuestion = document.createElement("p");
+        var esAnswer = document.createElement("p");
+        esQuestion.textContent = "ES" + (index + 1) + " 設問: " + (sourceEsEntry.questionText || "未入力");
+        esAnswer.textContent = "ES" + (index + 1) + " 回答: " + (sourceEsEntry.answerText || "未入力");
+        esBlock.appendChild(esQuestion);
+        esBlock.appendChild(esAnswer);
+      });
       detail.appendChild(esBlock);
     }
 
@@ -1644,7 +1691,7 @@
   }
 
   function restart() {
-    renderSetupEsSelect();
+    renderSetupCompanySelect();
     showView("setupView");
   }
 
@@ -1661,8 +1708,8 @@
   function switchAccount() {
     rememberActiveAccount(null);
     appState.selectedCompanyId = null;
-    appState.pendingSourceEsEntry = null;
-    renderSourceEsPreview(null);
+    appState.pendingSourceCompanyId = null;
+    renderSourceEsPreview(null, []);
     renderAccounts();
     showView("accountView");
   }
@@ -1828,7 +1875,7 @@
     on("esAnswerInput", "input", updateEsCharCount);
     on("esMaxCharsInput", "input", updateEsCharCount);
     on("esEntryList", "click", handleEsEntryListClick);
-    on("setupEsSelect", "change", handleSetupEsSelectChange);
+    on("setupCompanySelect", "change", handleSetupCompanySelectChange);
     on("saveAiSettingsBtn", "click", saveAiSettingsFromForm);
     on("testAiConnectionBtn", "click", testAiConnection);
     on("clearAiSettingsBtn", "click", clearAiSettings);
