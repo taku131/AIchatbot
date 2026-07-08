@@ -134,16 +134,25 @@
     selectedCompanyId: null,
     pendingSourceCompanyId: null,
     currentExpectedAnswerData: null,
+    audioClips: {},
     isBusy: false
   };
 
   var voiceInputState = {
     recognition: null,
+    mediaRecorder: null,
+    mediaStream: null,
+    audioChunks: [],
+    recordingStopPromise: null,
+    recordingStartedAt: null,
     isSupported: false,
+    isRecordingSupported: false,
     isListening: false,
+    isRecording: false,
     baseAnswer: "",
     finalTranscript: "",
-    lastError: ""
+    lastError: "",
+    pendingClip: null
   };
 
   function $(id) {
@@ -1551,6 +1560,7 @@
     if (appState.isBusy) {
       return;
     }
+    releaseAudioClips();
     var settings = readSettings();
     var sourceCompanyId = settings.companyId || appState.pendingSourceCompanyId;
     var sourceCompany = sourceCompanyId ? findCompany(sourceCompanyId, appState.activeAccountId) : null;
@@ -1614,11 +1624,60 @@
     }
   }
 
+  async function finalizeVoiceCaptureBeforeSubmit() {
+    if (voiceInputState.isListening && voiceInputState.recognition) {
+      try {
+        voiceInputState.recognition.stop();
+      } catch (error) {
+        console.warn("Speech recognition could not be stopped before submit:", error);
+      }
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 300);
+      });
+    }
+    if (voiceInputState.isRecording) {
+      await stopAudioRecording();
+    } else if (voiceInputState.recordingStopPromise) {
+      await voiceInputState.recordingStopPromise;
+    }
+    return voiceInputState.pendingClip;
+  }
+
+  function createTranscriptRecord(text, clip) {
+    return {
+      text: text,
+      source: clip || voiceInputState.finalTranscript ? "speech_recognition" : "manual",
+      confidence: null,
+      editedByUser: Boolean(voiceInputState.finalTranscript && text.indexOf(voiceInputState.finalTranscript.trim()) === -1),
+      finalizedAt: new Date().toISOString()
+    };
+  }
+
+  function createAudioMetadata(clip) {
+    if (!clip) {
+      return {
+        stored: false,
+        reviewAvailableDuringSession: false,
+        discardedAt: null
+      };
+    }
+    return {
+      stored: false,
+      reviewAvailableDuringSession: true,
+      clipId: clip.id,
+      mimeType: clip.mimeType,
+      durationMs: clip.durationMs,
+      sizeBytes: clip.size,
+      discardedAt: null
+    };
+  }
+
   async function submitAnswer() {
     if (!appState.interviewLog || appState.finished || appState.isBusy) {
       return;
     }
 
+    var audioClip = await finalizeVoiceCaptureBeforeSubmit();
     var answerInput = $("answerInput");
     var answer = answerInput && typeof answerInput.value === "string" ? answerInput.value.trim() : "";
     if (!answer) {
@@ -1635,6 +1694,10 @@
       questionNumber: appState.questionIndex + 1,
       question: appState.currentQuestion,
       answer: answer,
+      answerInputMode: audioClip ? "voice" : "text",
+      transcript: createTranscriptRecord(answer, audioClip),
+      audio: createAudioMetadata(audioClip),
+      audioClipId: audioClip ? audioClip.id : null,
       expectedAnswerData: expectedAnswerData,
       createdAt: new Date().toISOString()
     };
@@ -1654,9 +1717,15 @@
       questionNumber: appState.questionIndex + 1,
       question: appState.currentQuestion,
       answer: answer,
+      answerInputMode: message.answerInputMode,
+      transcript: message.transcript,
+      audio: message.audio,
+      audioClipId: message.audioClipId,
       expectedAnswerData: expectedAnswerData,
       evaluation: evaluationRecord
     });
+    voiceInputState.pendingClip = null;
+    voiceInputState.finalTranscript = "";
     appState.questionIndex += 1;
 
     renderImmediateFeedback(evaluation);
@@ -1729,6 +1798,80 @@
     appendListItems("deepDiveList", feedback.deepDiveQuestions);
     setText("revisionDirection", feedback.revisionDirection);
     appendListItems("nextPracticeList", feedback.nextPracticeList);
+    renderAudioReview();
+  }
+
+  function formatDuration(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) {
+      return "時間不明";
+    }
+    var seconds = Math.round(ms / 1000);
+    var minutes = Math.floor(seconds / 60);
+    var rest = seconds % 60;
+    return minutes ? minutes + "分" + rest + "秒" : rest + "秒";
+  }
+
+  function getAudioClip(clipId) {
+    return clipId && appState.audioClips ? appState.audioClips[clipId] || null : null;
+  }
+
+  function renderAudioReview() {
+    var list = $("audioReviewList");
+    if (!list) {
+      return;
+    }
+    list.textContent = "";
+    var entries = appState.interviewLog && Array.isArray(appState.interviewLog.entries) ? appState.interviewLog.entries : [];
+    var audioEntries = entries.map(function (entry) {
+      return {
+        entry: entry,
+        clip: getAudioClip(entry.audioClipId || (entry.audio && entry.audio.clipId))
+      };
+    }).filter(function (item) {
+      return item.clip && item.clip.url;
+    });
+
+    if (!audioEntries.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "この面接で確認できる録音はありません。文字起こしは履歴に保存されます。";
+      list.appendChild(empty);
+      return;
+    }
+
+    audioEntries.forEach(function (item) {
+      var block = document.createElement("article");
+      var title = document.createElement("p");
+      var meta = document.createElement("p");
+      var transcript = document.createElement("p");
+      var audio = document.createElement("audio");
+      block.className = "audio-review-item";
+      title.textContent = "Q" + item.entry.questionNumber + " 録音";
+      meta.textContent = [
+        item.clip.mimeType || "audio",
+        item.clip.size ? Math.round(item.clip.size / 1024) + "KB" : "",
+        formatDuration(item.clip.durationMs)
+      ].filter(Boolean).join(" / ");
+      transcript.textContent = "文字起こし: " + (item.entry.transcript && item.entry.transcript.text ? item.entry.transcript.text : item.entry.answer || "");
+      audio.controls = true;
+      audio.src = item.clip.url;
+      block.appendChild(title);
+      block.appendChild(meta);
+      block.appendChild(audio);
+      block.appendChild(transcript);
+      list.appendChild(block);
+    });
+  }
+
+  function releaseAudioClips() {
+    Object.keys(appState.audioClips || {}).forEach(function (clipId) {
+      var clip = appState.audioClips[clipId];
+      if (clip && clip.url && window.URL && typeof window.URL.revokeObjectURL === "function") {
+        window.URL.revokeObjectURL(clip.url);
+      }
+    });
+    appState.audioClips = {};
+    voiceInputState.pendingClip = null;
   }
 
   function appendListItems(id, items) {
@@ -1809,7 +1952,17 @@
 
   function getLogEntries(log) {
     if (Array.isArray(log.entries) && log.entries.length) {
-      return log.entries;
+      return log.entries.map(function (entry, index) {
+        if (entry.evaluation) {
+          return entry;
+        }
+        var evaluation = (log.evaluations || []).find(function (item) {
+          return item && (item.id === entry.evaluationId || item.messageId === entry.id);
+        }) || (log.evaluations || [])[index] || null;
+        return Object.assign({}, entry, {
+          evaluation: evaluation
+        });
+      });
     }
     return (log.messages || []).map(function (message, index) {
       return {
@@ -1817,6 +1970,11 @@
         questionNumber: message.questionNumber || index + 1,
         question: message.question,
         answer: message.answer,
+        answerInputMode: message.answerInputMode || "text",
+        transcript: message.transcript || null,
+        audio: message.audio || null,
+        audioClipId: message.audioClipId || null,
+        expectedAnswerData: message.expectedAnswerData || null,
         evaluation: (log.evaluations || [])[index] || null
       };
     });
@@ -1936,16 +2094,26 @@
       var heading = document.createElement("h4");
       var q = document.createElement("p");
       var a = document.createElement("p");
+      var transcript = document.createElement("p");
+      var audioNote = document.createElement("p");
       var e = document.createElement("p");
       var deepDive = document.createElement("p");
       heading.textContent = "Q" + entry.questionNumber;
       q.textContent = "Q. " + entry.question;
       a.textContent = "A. " + entry.answer;
+      transcript.textContent = "文字起こし: " + (entry.transcript && entry.transcript.text ? entry.transcript.text : entry.answer || "");
+      audioNote.textContent = entry.audio && entry.audio.reviewAvailableDuringSession
+        ? "音声: 長期保存なし。面接終了直後の画面でのみ確認可能です。"
+        : "音声: 保存なし";
       e.textContent = "評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし");
       deepDive.textContent = "深掘り質問: " + (entry.evaluation && entry.evaluation.deepDiveQuestion ? entry.evaluation.deepDiveQuestion : "なし");
       block.appendChild(heading);
       block.appendChild(q);
       block.appendChild(a);
+      if (entry.transcript || entry.audio) {
+        block.appendChild(transcript);
+        block.appendChild(audioNote);
+      }
       block.appendChild(e);
       block.appendChild(deepDive);
       appendExpectedAnswerData(block, getEntryExpectedAnswerData(entry), entry.evaluation);
@@ -1962,6 +2130,7 @@
   }
 
   function restart() {
+    releaseAudioClips();
     renderSetupCompanySelect();
     showView("setupView");
   }
@@ -1977,6 +2146,7 @@
   }
 
   function switchAccount() {
+    releaseAudioClips();
     rememberActiveAccount(null);
     appState.selectedCompanyId = null;
     appState.pendingSourceCompanyId = null;
@@ -2029,6 +2199,108 @@
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
   }
 
+  function getSupportedAudioMimeType() {
+    if (!window.MediaRecorder || typeof window.MediaRecorder.isTypeSupported !== "function") {
+      return "";
+    }
+    return [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus"
+    ].find(function (type) {
+      return window.MediaRecorder.isTypeSupported(type);
+    }) || "";
+  }
+
+  function stopVoiceMediaStream() {
+    if (voiceInputState.mediaStream && typeof voiceInputState.mediaStream.getTracks === "function") {
+      voiceInputState.mediaStream.getTracks().forEach(function (track) {
+        if (track && typeof track.stop === "function") {
+          track.stop();
+        }
+      });
+    }
+    voiceInputState.mediaStream = null;
+  }
+
+  function getCurrentTranscriptText() {
+    var answerInput = $("answerInput");
+    return answerInput && typeof answerInput.value === "string" ? answerInput.value.trim() : "";
+  }
+
+  function createAudioClipFromBlob(blob) {
+    if (!blob || !blob.size || !window.URL || typeof window.URL.createObjectURL !== "function") {
+      return null;
+    }
+    var clip = {
+      id: makeId("audio"),
+      url: window.URL.createObjectURL(blob),
+      mimeType: blob.type || "audio/webm",
+      size: blob.size,
+      durationMs: voiceInputState.recordingStartedAt ? Math.max(0, Date.now() - voiceInputState.recordingStartedAt) : null,
+      transcriptText: getCurrentTranscriptText(),
+      createdAt: new Date().toISOString()
+    };
+    appState.audioClips[clip.id] = clip;
+    return clip;
+  }
+
+  async function startAudioRecording() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function" || !window.MediaRecorder) {
+      voiceInputState.isRecordingSupported = false;
+      return;
+    }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      var mimeType = getSupportedAudioMimeType();
+      var options = mimeType ? { mimeType: mimeType } : undefined;
+      voiceInputState.mediaStream = stream;
+      voiceInputState.audioChunks = [];
+      voiceInputState.recordingStartedAt = Date.now();
+      voiceInputState.mediaRecorder = new window.MediaRecorder(stream, options);
+      voiceInputState.mediaRecorder.ondataavailable = function (event) {
+        if (event.data && event.data.size > 0) {
+          voiceInputState.audioChunks.push(event.data);
+        }
+      };
+      voiceInputState.recordingStopPromise = new Promise(function (resolve) {
+        voiceInputState.mediaRecorder.onstop = function () {
+        var type = voiceInputState.mediaRecorder && voiceInputState.mediaRecorder.mimeType ? voiceInputState.mediaRecorder.mimeType : mimeType || "audio/webm";
+        var blob = voiceInputState.audioChunks.length ? new Blob(voiceInputState.audioChunks, { type: type }) : null;
+        voiceInputState.pendingClip = createAudioClipFromBlob(blob);
+        voiceInputState.audioChunks = [];
+        voiceInputState.isRecording = false;
+        stopVoiceMediaStream();
+        if (voiceInputState.pendingClip) {
+          setText("voiceStatus", "音声入力を停止しました。録音はこの面接中だけ確認できます。");
+        }
+          resolve(voiceInputState.pendingClip);
+        };
+      });
+      voiceInputState.mediaRecorder.start();
+      voiceInputState.isRecording = true;
+      voiceInputState.isRecordingSupported = true;
+    } catch (error) {
+      voiceInputState.isRecording = false;
+      voiceInputState.isRecordingSupported = false;
+      voiceInputState.lastError = error && error.message ? error.message : "microphone-unavailable";
+      voiceInputState.recordingStopPromise = null;
+      stopVoiceMediaStream();
+      console.warn("Audio recording could not be started:", error);
+    }
+  }
+
+  function stopAudioRecording() {
+    if (voiceInputState.mediaRecorder && voiceInputState.mediaRecorder.state !== "inactive") {
+      voiceInputState.mediaRecorder.stop();
+      return voiceInputState.recordingStopPromise || Promise.resolve(null);
+    }
+    voiceInputState.isRecording = false;
+    stopVoiceMediaStream();
+    return Promise.resolve(voiceInputState.pendingClip);
+  }
+
   function setVoiceUiState(state) {
     var panel = document.querySelector(".voice-input-panel");
     var status = $("voiceStatus");
@@ -2071,14 +2343,14 @@
     voiceInputState.recognition.onstart = function () {
       voiceInputState.isListening = true;
       voiceInputState.finalTranscript = "";
-      setText("voiceStatus", "音声入力中です。");
+      setText("voiceStatus", voiceInputState.isRecording ? "音声入力・録音中です。" : "音声入力中です。");
       setVoiceUiState("is-listening");
       updateVoiceInputButtons();
     };
     voiceInputState.recognition.onresult = function (event) {
       var interimTranscript = "";
       var finalTranscript = "";
-      for (var i = 0; i < event.results.length; i += 1) {
+      for (var i = event.resultIndex || 0; i < event.results.length; i += 1) {
         var result = event.results[i];
         var transcript = result && result[0] ? result[0].transcript : "";
         if (result.isFinal) {
@@ -2099,6 +2371,7 @@
       setText("voiceStatus", "音声入力でエラーが発生しました: " + voiceInputState.lastError);
       setVoiceUiState("is-error");
       voiceInputState.isListening = false;
+      stopAudioRecording();
       updateVoiceInputButtons();
     };
     voiceInputState.recognition.onend = function () {
@@ -2106,13 +2379,14 @@
       setText("voiceStatus", "音声入力を停止しました。");
       setText("voiceTranscriptPreview", "");
       setVoiceUiState("");
+      stopAudioRecording();
       updateVoiceInputButtons();
     };
     setText("voiceStatus", "音声入力を開始できます。");
     updateVoiceInputButtons();
   }
 
-  function startVoiceInput(event) {
+  async function startVoiceInput(event) {
     if (event && typeof event.preventDefault === "function") {
       event.preventDefault();
     }
@@ -2122,16 +2396,20 @@
     var answerInput = $("answerInput");
     voiceInputState.baseAnswer = answerInput && typeof answerInput.value === "string" ? answerInput.value : "";
     voiceInputState.finalTranscript = "";
+    voiceInputState.pendingClip = null;
+    await startAudioRecording();
     voiceInputState.recognition.start();
   }
 
-  function stopVoiceInput(event) {
+  async function stopVoiceInput(event) {
     if (event && typeof event.preventDefault === "function") {
       event.preventDefault();
     }
     if (voiceInputState.recognition && voiceInputState.isListening) {
       voiceInputState.recognition.stop();
+      return;
     }
+    await stopAudioRecording();
   }
 
   function bindEvents() {
@@ -2172,6 +2450,10 @@
         }
       });
     }
+    window.addEventListener("beforeunload", function () {
+      releaseAudioClips();
+      stopVoiceMediaStream();
+    });
   }
 
   function init() {
