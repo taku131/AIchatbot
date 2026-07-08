@@ -1,6 +1,6 @@
 # AI Interview Chatbot
 
-AI 面接練習用の Web アプリプロトタイプです。OpenAI API を任意で使えます。アカウントやESなどのアプリ内データは、現状ブラウザの `localStorage` に保存します。
+AI 面接練習用の Web アプリプロトタイプです。OpenAI API を任意で使えます。アカウント、企業、ES、面接ログなどのアプリ内データは、現状ブラウザの `localStorage` に保存します。
 
 ## 起動方法
 
@@ -61,6 +61,7 @@ npm run check
 
 APIキーはローカルサーバーの `/api/openai` 経由でOpenAIへ送信されます。`APIキーをこのブラウザに保存する` を有効にした場合のみ `localStorage` に保存します。共有PCでは保存しない運用を推奨します。
 
-## Backlog
+## 設計資料
 
-GitHub Issues 用の起票案は [docs/github-issues.md](docs/github-issues.md) にまとめています。
+- GitHub Issues 起票案: [docs/github-issues.md](docs/github-issues.md)
+- AI回答評価・正解データ設計: [docs/answer-evaluation-design.md](docs/answer-evaluation-design.md)
