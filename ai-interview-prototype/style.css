@@ -767,6 +767,30 @@ textarea:focus {
   margin: 0;
 }
 
+.expected-answer-block {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.history-subtitle {
+  color: var(--text) !important;
+  font-weight: 800;
+}
+
+.history-compact-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 @media (max-width: 860px) {
   .app-header,
   .compact-heading {

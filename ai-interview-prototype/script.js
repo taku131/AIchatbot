@@ -133,6 +133,7 @@
     activeAccountId: null,
     selectedCompanyId: null,
     pendingSourceCompanyId: null,
+    currentExpectedAnswerData: null,
     isBusy: false
   };
 
@@ -898,6 +899,39 @@
     return jsonSchema(props);
   }
 
+  function scoringRubricSchema() {
+    return jsonSchema({
+      answerRelevance: { type: "number" },
+      logicalStructure: { type: "number" },
+      specificity: { type: "number" },
+      esConsistency: { type: "number" },
+      companyRoleFit: { type: "number" },
+      selfReflection: { type: "number" },
+      depthResistance: { type: "number" }
+    });
+  }
+
+  function expectedAnswerDataSchema() {
+    return jsonSchema({
+      questionIntent: { type: "string" },
+      mustInclude: stringArraySchema(),
+      shouldInclude: stringArraySchema(),
+      goodSignals: stringArraySchema(),
+      riskSignals: stringArraySchema(),
+      referenceFactsFromES: stringArraySchema(),
+      suggestedStructure: stringArraySchema(),
+      followUpFocus: stringArraySchema(),
+      scoringRubric: scoringRubricSchema()
+    });
+  }
+
+  function esConsistencySchema() {
+    return jsonSchema({
+      status: { type: "string" },
+      notes: { type: "string" }
+    });
+  }
+
   var schemas = {
     connection_test: jsonSchema({
       message: { type: "string" }
@@ -905,6 +939,7 @@
     interview_question: jsonSchema({
       question: { type: "string" }
     }),
+    expected_answer_data: expectedAnswerDataSchema(),
     answer_evaluation: jsonSchema({
       score: { type: "number" },
       axisScores: axisScoreSchema(),
@@ -912,6 +947,9 @@
       goodPoints: stringArraySchema(),
       improvements: stringArraySchema(),
       issues: stringArraySchema(),
+      missingElements: stringArraySchema(),
+      esConsistency: esConsistencySchema(),
+      scoringRationale: { type: "string" },
       deepDiveQuestion: { type: "string" },
       direction: { type: "string" },
       revisedAnswerExample: { type: "string" },
@@ -959,6 +997,8 @@
     return [
       "応募企業: " + (safeSettings.company || "未設定"),
       "応募職種: " + (safeSettings.role || "未設定"),
+      "応募区分: " + (safeSettings.companyStage || "未設定"),
+      "企業メモ: " + (safeSettings.companyNotes || "未入力"),
       "面接タイプ: " + formatInterviewTypeLabel(safeSettings.interviewType),
       "対象区分: " + (safeSettings.targetType || "未設定"),
       "カテゴリ: " + formatCategoryLabel(safeSettings.category),
@@ -973,6 +1013,136 @@
         ].join("\n");
       }).join("\n---\n") : "保存済みES: なし"
     ].filter(Boolean).join("\n");
+  }
+
+  function sanitizeStringArray(items, fallback) {
+    var source = Array.isArray(items) ? items : fallback || [];
+    return source.map(function (item) {
+      return String(item || "").trim();
+    }).filter(Boolean);
+  }
+
+  function normalizeScoringRubric(rubric) {
+    var fallback = {
+      answerRelevance: 18,
+      logicalStructure: 14,
+      specificity: 18,
+      esConsistency: 18,
+      companyRoleFit: 14,
+      selfReflection: 10,
+      depthResistance: 8
+    };
+    var result = {};
+    Object.keys(fallback).forEach(function (key) {
+      var value = rubric && Number(rubric[key]);
+      result[key] = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : fallback[key];
+    });
+    return result;
+  }
+
+  function createFallbackExpectedAnswerData(question, settings) {
+    var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
+    var sourceEntries = Array.isArray(safeSettings.sourceEsEntries) ? safeSettings.sourceEsEntries : [];
+    var referenceFacts = sourceEntries.map(function (entry, index) {
+      var answer = String(entry.answerText || "").replace(/\s+/g, " ").slice(0, 140);
+      return "ES" + (index + 1) + ": " + (entry.questionText || "設問未入力") + (answer ? " / " + answer : "");
+    }).filter(Boolean);
+    var mustInclude = [
+      "質問に直接答える結論",
+      "根拠になる具体的な経験または判断",
+      "行動と結果",
+      "ES全体と矛盾しない説明"
+    ];
+    if (safeSettings.company) {
+      mustInclude.push(safeSettings.company + "との接点");
+    }
+    if (safeSettings.role) {
+      mustInclude.push(safeSettings.role + "で活かせる要素");
+    }
+    return {
+      questionIntent: "面接官が「" + question + "」で確認したい意図を、結論・根拠・再現性・企業適合の観点で満たすこと。",
+      mustInclude: mustInclude,
+      shouldInclude: [
+        "背景、課題、行動、結果、学びの流れ",
+        "数字、期間、人数、役割などの具体情報",
+        "入社後または参加後にどう活かすか"
+      ],
+      goodSignals: [
+        "ESに書いた経験を使いながら、面接用に補足説明できている",
+        "本人の役割と意思決定が明確",
+        "成果だけでなく、再現できる行動特性まで説明している"
+      ],
+      riskSignals: [
+        "どの企業にも使える一般論に寄っている",
+        "ESにない事実を断定している",
+        "結論が遅く、質問への答えが曖昧",
+        "成果や学びが抽象的"
+      ],
+      referenceFactsFromES: referenceFacts,
+      suggestedStructure: ["結論", "背景", "自分の役割", "行動", "結果", "学び", "応募先での活かし方"],
+      followUpFocus: ["なぜその行動を取ったか", "成果の根拠", "再現性", "応募企業・職種との接点"],
+      scoringRubric: normalizeScoringRubric(null),
+      generatedBy: "mock",
+      generatedAt: new Date().toISOString()
+    };
+  }
+
+  function normalizeExpectedAnswerData(data, fallback) {
+    var base = fallback || createFallbackExpectedAnswerData("", {});
+    return {
+      questionIntent: String(data && data.questionIntent || base.questionIntent || ""),
+      mustInclude: sanitizeStringArray(data && data.mustInclude, base.mustInclude),
+      shouldInclude: sanitizeStringArray(data && data.shouldInclude, base.shouldInclude),
+      goodSignals: sanitizeStringArray(data && data.goodSignals, base.goodSignals),
+      riskSignals: sanitizeStringArray(data && data.riskSignals, base.riskSignals),
+      referenceFactsFromES: sanitizeStringArray(data && data.referenceFactsFromES, base.referenceFactsFromES),
+      suggestedStructure: sanitizeStringArray(data && data.suggestedStructure, base.suggestedStructure),
+      followUpFocus: sanitizeStringArray(data && data.followUpFocus, base.followUpFocus),
+      scoringRubric: normalizeScoringRubric(data && data.scoringRubric),
+      generatedBy: data && data.generatedBy ? data.generatedBy : base.generatedBy || "openai",
+      generatedAt: data && data.generatedAt ? data.generatedAt : new Date().toISOString()
+    };
+  }
+
+  function getPreviousTurns() {
+    return appState.interviewLog && Array.isArray(appState.interviewLog.entries)
+      ? appState.interviewLog.entries.map(function (entry) {
+        return {
+          questionNumber: entry.questionNumber,
+          question: entry.question,
+          answer: entry.answer,
+          score: entry.evaluation ? entry.evaluation.score : null,
+          summary: entry.evaluation ? entry.evaluation.summary : ""
+        };
+      })
+      : [];
+  }
+
+  async function getExpectedAnswerData(question, settings) {
+    var fallback = createFallbackExpectedAnswerData(question, settings);
+    try {
+      var result = await callOpenAi(
+        "expected_answer_data",
+        [
+          "あなたは就職・研究・インターン面接の評価基準設計者です。",
+          "次の面接質問に対して、採点に使う期待回答データをJSONで作ってください。",
+          "重要: 模範回答文は作らないでください。ユーザーの自由な表現を許容し、回答に含まれるべき条件、良い兆候、リスク、深掘り観点だけを作ってください。",
+          "ESにない事実を作らず、企業情報、職種、応募区分、全ESとの一貫性を重視してください。",
+          "文章の流暢さだけで高評価にしない採点基準にしてください。",
+          buildAiContext(settings),
+          "現在の質問: " + question,
+          "これまでの会話履歴:",
+          JSON.stringify(getPreviousTurns())
+        ].join("\n"),
+        schemas.expected_answer_data
+      );
+      return normalizeExpectedAnswerData(Object.assign({}, result, {
+        generatedBy: "openai"
+      }), fallback);
+    } catch (error) {
+      console.warn("AI expected answer data generation failed. Falling back to mock.", error);
+      return fallback;
+    }
   }
 
   async function testAiConnection(event) {
@@ -1133,14 +1303,16 @@
     ].join("");
   }
 
-  function evaluateAnswer(question, answer, settings) {
+  function evaluateAnswer(question, answer, settings, expectedAnswerData) {
     var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
     var safeAnswer = String(answer || "").trim();
+    var expected = expectedAnswerData || createFallbackExpectedAnswerData(question, safeSettings);
     var score = scoreAnswer(safeAnswer, safeSettings);
     var axes = axisScores(score, safeAnswer, safeSettings);
     var goodPoints = [];
     var improvements = [];
     var issues = [];
+    var missingElements = [];
 
     if (axes["結論の明確さ"] >= 7) {
       goodPoints.push("回答の主張が早い段階で示されています。");
@@ -1159,6 +1331,11 @@
     } else {
       improvements.push("企業の事業、職種で求められる力、自分の経験の接点を明示してください。");
     }
+    (expected.mustInclude || []).forEach(function (item) {
+      if (safeAnswer.indexOf(item) === -1 && missingElements.length < 4) {
+        missingElements.push(item);
+      }
+    });
 
     return {
       question: question,
@@ -1169,6 +1346,13 @@
       goodPoints: goodPoints,
       improvements: improvements,
       issues: issues,
+      missingElements: missingElements,
+      esConsistency: {
+        status: safeSettings.sourceEsEntries && safeSettings.sourceEsEntries.length ? "unchecked_by_mock" : "insufficient_evidence",
+        notes: "モック採点ではESとの厳密な矛盾検出は行わず、回答内の企業名・職種名・具体性を中心に見ています。"
+      },
+      scoringRationale: "ローカルの簡易採点です。OpenAI設定が有効な場合は、期待回答データ、全ES、企業情報、会話履歴を使って採点します。",
+      expectedAnswerData: expected,
       deepDiveQuestion: generateFollowUpQuestion(safeAnswer, safeSettings),
       direction: "結論を先に置き、根拠となる経験を数字や役割で補強し、最後に応募先での再現性へつなげてください。",
       revisedAnswerExample: buildRevisedAnswerExample(question, safeAnswer, safeSettings),
@@ -1181,16 +1365,25 @@
     };
   }
 
-  async function getAnswerEvaluation(question, answer, settings) {
-    var fallback = evaluateAnswer(question, answer, settings);
+  async function getAnswerEvaluation(question, answer, settings, expectedAnswerData) {
+    var expected = expectedAnswerData || createFallbackExpectedAnswerData(question, settings);
+    var fallback = evaluateAnswer(question, answer, settings, expected);
     try {
       var result = await callOpenAi(
         "answer_evaluation",
         [
-          "以下の面接回答を評価し、次の質問も1つ生成してください。",
+          "あなたは面接官兼採点者です。以下の面接回答を評価し、次の質問も1つ生成してください。",
           "点数は0から100、評価軸は1から10で採点してください。",
+          "expectedAnswerDataは模範回答ではなく採点条件です。完全一致ではなく、回答が条件を満たしているかを見てください。",
+          "質問に直接答えているか、ES全体と矛盾していないか、ESの単なる言い換えでなく背景・本人の行動・判断理由・成果・学び・再現性が補足されているかを評価してください。",
+          "文章が流暢・丁寧という理由だけで点数を上げないでください。",
+          "ESにない事実、数値、役割は補完せず、未確認情報または深掘り対象として扱ってください。",
           "改善点は実際に次の回答で直せる粒度にしてください。",
           buildAiContext(settings),
+          "expectedAnswerData:",
+          JSON.stringify(expected),
+          "これまでの会話履歴:",
+          JSON.stringify(getPreviousTurns()),
           "質問: " + question,
           "回答: " + answer
         ].join("\n"),
@@ -1199,6 +1392,13 @@
       return Object.assign({}, fallback, result, {
         score: Math.max(0, Math.min(100, Math.round(Number(result.score) || fallback.score))),
         axisScores: normalizeAxisScores(result.axisScores, fallback.axisScores),
+        goodPoints: sanitizeStringArray(result.goodPoints, fallback.goodPoints),
+        improvements: sanitizeStringArray(result.improvements, fallback.improvements),
+        issues: sanitizeStringArray(result.issues, fallback.issues),
+        missingElements: sanitizeStringArray(result.missingElements, fallback.missingElements),
+        esConsistency: result.esConsistency || fallback.esConsistency,
+        scoringRationale: result.scoringRationale || fallback.scoringRationale,
+        expectedAnswerData: expected,
         nextQuestion: result.nextQuestion || fallback.nextQuestion,
         createdAt: new Date().toISOString()
       });
@@ -1283,6 +1483,7 @@
               questionNumber: entry.questionNumber,
               question: entry.question,
               answer: entry.answer,
+              expectedAnswerData: getEntryExpectedAnswerData(entry),
               evaluation: entry.evaluation
             };
           }))
@@ -1375,6 +1576,7 @@
     appState.settings = settings;
     appState.questionIndex = 0;
     appState.finished = false;
+    appState.currentExpectedAnswerData = null;
     appState.interviewLog = {
       id: makeId("session"),
       accountId: settings.accountId || appState.activeAccountId || null,
@@ -1400,6 +1602,8 @@
     showView("interviewView");
     setBusy(true, "質問を生成中です...");
     appState.currentQuestion = await getInterviewQuestion(settings);
+    setBusy(true, "評価基準を生成中です...");
+    appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, settings);
     setText("currentQuestion", appState.currentQuestion);
     setText("feedbackSummary", "回答を入力してください。");
     setBusy(false);
@@ -1423,20 +1627,23 @@
     }
 
     setBusy(true, "回答を評価中です...");
-    var evaluation = await getAnswerEvaluation(appState.currentQuestion, answer, appState.settings);
+    var expectedAnswerData = appState.currentExpectedAnswerData || await getExpectedAnswerData(appState.currentQuestion, appState.settings);
+    var evaluation = await getAnswerEvaluation(appState.currentQuestion, answer, appState.settings, expectedAnswerData);
     var message = {
       id: makeId("msg"),
       sessionId: appState.interviewLog.id,
       questionNumber: appState.questionIndex + 1,
       question: appState.currentQuestion,
       answer: answer,
+      expectedAnswerData: expectedAnswerData,
       createdAt: new Date().toISOString()
     };
     var evaluationRecord = Object.assign({}, evaluation, {
       id: makeId("eval"),
       sessionId: appState.interviewLog.id,
       messageId: message.id,
-      questionNumber: message.questionNumber
+      questionNumber: message.questionNumber,
+      expectedAnswerData: expectedAnswerData
     });
 
     appState.interviewLog.messages.push(message);
@@ -1447,6 +1654,7 @@
       questionNumber: appState.questionIndex + 1,
       question: appState.currentQuestion,
       answer: answer,
+      expectedAnswerData: expectedAnswerData,
       evaluation: evaluationRecord
     });
     appState.questionIndex += 1;
@@ -1464,6 +1672,9 @@
     }
 
     appState.currentQuestion = evaluation.nextQuestion || await getInterviewQuestion(appState.settings);
+    appState.currentExpectedAnswerData = null;
+    setBusy(true, "次の評価基準を生成中です...");
+    appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, appState.settings);
     setText("currentQuestion", appState.currentQuestion);
     setText("progressText", "質問 " + (appState.questionIndex + 1) + " / " + appState.settings.questionCount);
     setBusy(false);
@@ -1619,6 +1830,65 @@
     return settings.sourceEsEntry ? [settings.sourceEsEntry] : [];
   }
 
+  function getEntryExpectedAnswerData(entry) {
+    if (entry && entry.expectedAnswerData) {
+      return entry.expectedAnswerData;
+    }
+    if (entry && entry.evaluation && entry.evaluation.expectedAnswerData) {
+      return entry.evaluation.expectedAnswerData;
+    }
+    return null;
+  }
+
+  function appendCompactList(parent, title, items) {
+    var safeItems = sanitizeStringArray(items, []);
+    if (!safeItems.length) {
+      return;
+    }
+    var label = document.createElement("p");
+    var list = document.createElement("ul");
+    label.className = "history-subtitle";
+    label.textContent = title;
+    list.className = "history-compact-list";
+    safeItems.forEach(function (item) {
+      var li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    });
+    parent.appendChild(label);
+    parent.appendChild(list);
+  }
+
+  function appendExpectedAnswerData(parent, expectedAnswerData, evaluation) {
+    if (!expectedAnswerData) {
+      return;
+    }
+    var section = document.createElement("div");
+    var intent = document.createElement("p");
+    section.className = "expected-answer-block";
+    intent.textContent = "評価基準: " + (expectedAnswerData.questionIntent || "なし");
+    section.appendChild(intent);
+    appendCompactList(section, "必ず見る条件", expectedAnswerData.mustInclude);
+    appendCompactList(section, "加点要素", expectedAnswerData.shouldInclude);
+    appendCompactList(section, "ESから参照した事実", expectedAnswerData.referenceFactsFromES);
+    appendCompactList(section, "リスク", expectedAnswerData.riskSignals);
+    appendCompactList(section, "深掘り観点", expectedAnswerData.followUpFocus);
+    if (evaluation && evaluation.missingElements && evaluation.missingElements.length) {
+      appendCompactList(section, "今回不足していた要素", evaluation.missingElements);
+    }
+    if (evaluation && evaluation.esConsistency) {
+      var consistency = document.createElement("p");
+      consistency.textContent = "ES一貫性: " + (evaluation.esConsistency.status || "未判定") + " / " + (evaluation.esConsistency.notes || "");
+      section.appendChild(consistency);
+    }
+    if (evaluation && evaluation.scoringRationale) {
+      var rationale = document.createElement("p");
+      rationale.textContent = "採点根拠: " + evaluation.scoringRationale;
+      section.appendChild(rationale);
+    }
+    parent.appendChild(section);
+  }
+
   function renderHistoryDetail(log) {
     var detail = $("historyDetail");
     if (!detail) {
@@ -1678,6 +1948,7 @@
       block.appendChild(a);
       block.appendChild(e);
       block.appendChild(deepDive);
+      appendExpectedAnswerData(block, getEntryExpectedAnswerData(entry), entry.evaluation);
       detail.appendChild(block);
     });
   }
