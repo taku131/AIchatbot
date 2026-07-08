@@ -133,7 +133,6 @@
     activeAccountId: null,
     selectedCompanyId: null,
     pendingSourceEsEntry: null,
-    pendingEsAnalysis: null,
     isBusy: false
   };
 
@@ -349,6 +348,7 @@
     setText("activeAccountName", account ? account.displayName : "未選択");
     renderCompanies();
     renderEsEntries();
+    renderSetupEsSelect();
     updateEsCharCount();
   }
 
@@ -435,17 +435,9 @@
       meta.textContent = [
         formatCategoryLabel(entry.category),
         formatStatusLabel(entry.status),
-        String(entry.answerText || "").length + (entry.maxChars ? " / " + entry.maxChars : "") + "文字",
-        entry.aiAnalysis ? "AI分析済み" : ""
+        String(entry.answerText || "").length + (entry.maxChars ? " / " + entry.maxChars : "") + "文字"
       ].filter(Boolean).join(" / ");
       item.appendChild(meta);
-
-      if (entry.aiAnalysis) {
-        var analysisSummary = document.createElement("p");
-        analysisSummary.className = "item-meta";
-        analysisSummary.textContent = "分析: " + entry.aiAnalysis.intent + " / 改善方針: " + entry.aiAnalysis.improvedDirection;
-        item.appendChild(analysisSummary);
-      }
 
       var actions = document.createElement("div");
       actions.className = "form-actions";
@@ -458,17 +450,41 @@
       useButton.textContent = "このESで面接練習";
       actions.appendChild(useButton);
 
-      var analyzeButton = document.createElement("button");
-      analyzeButton.type = "button";
-      analyzeButton.className = "button button-ghost button-small";
-      analyzeButton.dataset.esEntryId = entry.id;
-      analyzeButton.dataset.action = "analyze-es-entry";
-      analyzeButton.textContent = "AI分析";
-      actions.appendChild(analyzeButton);
-
       item.appendChild(actions);
       list.appendChild(item);
     });
+  }
+
+  function renderSetupEsSelect() {
+    var select = $("setupEsSelect");
+    if (!select) {
+      return;
+    }
+    var selectedId = appState.pendingSourceEsEntry ? appState.pendingSourceEsEntry.id : "";
+    var entries = appState.activeAccountId ? getAccountEsEntries(appState.activeAccountId) : [];
+    select.textContent = "";
+
+    var emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "ESを選択せずに設定する";
+    select.appendChild(emptyOption);
+
+    entries.forEach(function (entry) {
+      var company = findCompany(entry.companyId, entry.accountId);
+      var option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = [
+        company ? company.companyName : "企業未設定",
+        company && company.role ? company.role : "職種未設定",
+        formatCategoryLabel(entry.category),
+        String(entry.questionText || "").slice(0, 36)
+      ].filter(Boolean).join(" / ");
+      select.appendChild(option);
+    });
+
+    select.value = entries.some(function (entry) {
+      return entry.id === selectedId;
+    }) ? selectedId : "";
   }
 
   function renderAiSettings() {
@@ -604,7 +620,6 @@
       maxChars: Number.isFinite(maxChars) && maxChars > 0 ? maxChars : null,
       category: normalizeCategory(getValue("esCategorySelect", DEFAULT_SETTINGS.category)),
       status: getValue("esStatusSelect", "draft") || "draft",
-      aiAnalysis: appState.pendingEsAnalysis || null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -612,12 +627,11 @@
     var entries = loadEsEntries();
     entries.unshift(entry);
     saveEsEntries(entries);
-    appState.pendingEsAnalysis = null;
-    renderEsAnalysis(null);
     setValue("esQuestionInput", "");
     setValue("esAnswerInput", "");
     updateEsCharCount();
     renderEsEntries();
+    renderSetupEsSelect();
   }
 
   function updateEsCharCount() {
@@ -674,7 +688,6 @@
       maxChars: entry.maxChars,
       category: entry.category,
       status: entry.status,
-      aiAnalysis: entry.aiAnalysis || null,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt
     };
@@ -691,11 +704,25 @@
     appState.pendingSourceEsEntry = summarizeSourceEsEntry(entry);
     renderCompanies();
     renderEsEntries();
+    renderSetupEsSelect();
     renderSourceEsPreview(appState.pendingSourceEsEntry);
     showView("setupView");
   }
 
   function useEsEntry(entryId) {
+    var entry = findEsEntry(entryId);
+    if (entry) {
+      applyEsEntryToSettings(entry);
+    }
+  }
+
+  function handleSetupEsSelectChange() {
+    var entryId = getValue("setupEsSelect", "");
+    if (!entryId) {
+      appState.pendingSourceEsEntry = null;
+      renderSourceEsPreview(null);
+      return;
+    }
     var entry = findEsEntry(entryId);
     if (entry) {
       applyEsEntryToSettings(entry);
@@ -712,12 +739,6 @@
 
   function buildProfileWithSourceEs(entry) {
     var lines = [];
-    if (entry.aiAnalysis) {
-      lines.push("AI分析メモ:");
-      lines.push("設問意図: " + entry.aiAnalysis.intent);
-      lines.push("主張: " + entry.aiAnalysis.mainClaim);
-      lines.push("改善方針: " + entry.aiAnalysis.improvedDirection);
-    }
     lines.push("ES設問: " + (entry.questionText || ""));
     lines.push("ES回答: " + (entry.answerText || ""));
     return lines.join("\n");
@@ -860,15 +881,6 @@
     connection_test: jsonSchema({
       message: { type: "string" }
     }),
-    es_analysis: jsonSchema({
-      intent: { type: "string" },
-      mainClaim: { type: "string" },
-      evidence: stringArraySchema(),
-      weaknesses: stringArraySchema(),
-      missingInfo: stringArraySchema(),
-      followUpQuestions: stringArraySchema(),
-      improvedDirection: { type: "string" }
-    }),
     interview_question: jsonSchema({
       question: { type: "string" }
     }),
@@ -932,8 +944,7 @@
       "面接官タイプ: " + (safeSettings.interviewerType || "未設定"),
       "自己メモ: " + (safeSettings.userProfile || "未入力"),
       source ? "ES設問: " + (source.questionText || "") : "",
-      source ? "ES回答: " + (source.answerText || "") : "",
-      source && source.aiAnalysis ? "ES分析: " + JSON.stringify(source.aiAnalysis) : ""
+      source ? "ES回答: " + (source.answerText || "") : ""
     ].filter(Boolean).join("\n");
   }
 
@@ -953,104 +964,6 @@
     } catch (error) {
       setText("aiSettingsMessage", "接続失敗: " + error.message);
     }
-  }
-
-  async function analyzeCurrentEs(event) {
-    if (event && typeof event.preventDefault === "function") {
-      event.preventDefault();
-    }
-    var entry = {
-      questionText: getValue("esQuestionInput", ""),
-      answerText: getRawValue("esAnswerInput", ""),
-      category: normalizeCategory(getValue("esCategorySelect", DEFAULT_SETTINGS.category)),
-      maxChars: parseInt(getValue("esMaxCharsInput", ""), 10) || null
-    };
-    if (!entry.questionText || !entry.answerText) {
-      renderEsAnalysis({ error: "ES設問と回答本文を入力してください。" });
-      return;
-    }
-    var company = getSelectedCompany();
-    await runEsAnalysis(entry, company, function (analysis) {
-      appState.pendingEsAnalysis = analysis;
-      renderEsAnalysis(analysis);
-    });
-  }
-
-  async function analyzeSavedEs(entryId) {
-    var entry = findEsEntry(entryId);
-    if (!entry) {
-      return;
-    }
-    var company = findCompany(entry.companyId, entry.accountId);
-    await runEsAnalysis(entry, company, function (analysis) {
-      var entries = loadEsEntries();
-      entries = entries.map(function (item) {
-        return item.id === entry.id ? Object.assign({}, item, { aiAnalysis: analysis, updatedAt: nowIso() }) : item;
-      });
-      saveEsEntries(entries);
-      renderEsAnalysis(analysis);
-      renderEsEntries();
-    });
-  }
-
-  async function runEsAnalysis(entry, company, onSuccess) {
-    var panel = $("esAiAnalysis");
-    if (panel) {
-      panel.hidden = false;
-      panel.textContent = "AIでESを分析中です...";
-    }
-    try {
-      var result = await callOpenAi(
-        "es_analysis",
-        [
-          "以下のESを面接準備用に分析してください。",
-          "企業: " + (company && company.companyName ? company.companyName : "未設定"),
-          "職種: " + (company && company.role ? company.role : "未設定"),
-          "カテゴリ: " + formatCategoryLabel(entry.category),
-          "文字数制限: " + (entry.maxChars || "未設定"),
-          "設問: " + entry.questionText,
-          "回答: " + entry.answerText,
-          "分析は面接で深掘りされる観点を重視してください。"
-        ].join("\n"),
-        schemas.es_analysis
-      );
-      onSuccess(result);
-    } catch (error) {
-      renderEsAnalysis({ error: "AI分析に失敗しました: " + error.message });
-    }
-  }
-
-  function renderEsAnalysis(analysis) {
-    var panel = $("esAiAnalysis");
-    if (!panel) {
-      return;
-    }
-    panel.textContent = "";
-    if (!analysis) {
-      panel.hidden = true;
-      return;
-    }
-    panel.hidden = false;
-    if (analysis.error) {
-      panel.textContent = analysis.error;
-      return;
-    }
-    var title = document.createElement("h3");
-    title.textContent = "AI分析結果";
-    panel.appendChild(title);
-    [
-      ["設問意図", analysis.intent],
-      ["主張", analysis.mainClaim],
-      ["改善方針", analysis.improvedDirection],
-      ["根拠", (analysis.evidence || []).join(" / ")],
-      ["弱点", (analysis.weaknesses || []).join(" / ")],
-      ["不足情報", (analysis.missingInfo || []).join(" / ")],
-      ["想定深掘り", (analysis.followUpQuestions || []).join(" / ")]
-    ].forEach(function (row) {
-      var p = document.createElement("p");
-      p.textContent = row[0] + ": " + (row[1] || "なし");
-      panel.appendChild(p);
-    });
   }
 
   function textSeed(text) {
@@ -1392,7 +1305,7 @@
 
   function setBusy(isBusy, message) {
     appState.isBusy = Boolean(isBusy);
-    ["startInterviewBtn", "submitAnswerBtn", "finishInterviewBtn", "analyzeEsBtn", "testAiConnectionBtn"].forEach(function (id) {
+    ["startInterviewBtn", "submitAnswerBtn", "finishInterviewBtn", "testAiConnectionBtn"].forEach(function (id) {
       var button = $(id);
       if (button) {
         button.disabled = appState.isBusy;
@@ -1731,6 +1644,7 @@
   }
 
   function restart() {
+    renderSetupEsSelect();
     showView("setupView");
   }
 
@@ -1748,7 +1662,6 @@
     rememberActiveAccount(null);
     appState.selectedCompanyId = null;
     appState.pendingSourceEsEntry = null;
-    appState.pendingEsAnalysis = null;
     renderSourceEsPreview(null);
     renderAccounts();
     showView("accountView");
@@ -1791,9 +1704,6 @@
     }
     if (target.dataset.action === "use-es-entry") {
       useEsEntry(target.dataset.esEntryId);
-    }
-    if (target.dataset.action === "analyze-es-entry") {
-      analyzeSavedEs(target.dataset.esEntryId);
     }
   }
 
@@ -1915,10 +1825,10 @@
     on("companyList", "click", handleCompanyListClick);
     on("esForm", "submit", saveEsFromForm);
     on("saveEsBtn", "click", saveEsFromForm);
-    on("analyzeEsBtn", "click", analyzeCurrentEs);
     on("esAnswerInput", "input", updateEsCharCount);
     on("esMaxCharsInput", "input", updateEsCharCount);
     on("esEntryList", "click", handleEsEntryListClick);
+    on("setupEsSelect", "change", handleSetupEsSelectChange);
     on("saveAiSettingsBtn", "click", saveAiSettingsFromForm);
     on("testAiConnectionBtn", "click", testAiConnection);
     on("clearAiSettingsBtn", "click", clearAiSettings);

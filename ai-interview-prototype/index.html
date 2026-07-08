@@ -89,7 +89,7 @@
           <button id="testAiConnectionBtn" class="button button-secondary" type="button">接続テスト</button>
           <button id="clearAiSettingsBtn" class="button button-danger" type="button">APIキー削除</button>
         </div>
-        <div id="aiSettingsMessage" class="inline-feedback field-wide" aria-live="polite">APIキーを入力すると、ES分析・質問生成・回答評価・最終フィードバックでOpenAIを使えます。</div>
+        <div id="aiSettingsMessage" class="inline-feedback field-wide" aria-live="polite">APIキーを入力すると、面接質問生成・回答評価・最終フィードバックでOpenAIを使えます。</div>
       </form>
     </section>
 
@@ -183,11 +183,8 @@
             </div>
             <div class="form-actions">
               <button id="saveEsBtn" class="button button-primary" type="button">ESを保存</button>
-              <button id="analyzeEsBtn" class="button button-secondary" type="button">AIでES分析</button>
             </div>
           </form>
-
-          <div id="esAiAnalysis" class="ai-analysis-panel" hidden></div>
 
           <div class="list-block">
             <h3>選択中企業のES</h3>
@@ -204,6 +201,13 @@
       </div>
 
       <form id="setupForm" class="setup-grid">
+        <div class="field field-wide">
+          <label for="setupEsSelect">保存済みESから選択</label>
+          <select id="setupEsSelect" name="setupEs">
+            <option value="">ESを選択せずに設定する</option>
+          </select>
+          <p class="field-help">企業・ES管理で保存したESを選ぶと、応募企業、応募職種、カテゴリ、ES本文が自動で反映されます。</p>
+        </div>
         <div class="field">
           <label for="companyInput">応募企業</label>
           <input id="companyInput" name="company" type="text" placeholder="例: 株式会社サンプル">
