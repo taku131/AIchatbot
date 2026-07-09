@@ -303,6 +303,14 @@
         <div class="question-area" aria-live="polite">
           <p class="panel-label">AI質問</p>
           <div id="currentQuestion" class="question-card">設定を完了すると、ここに質問が表示されます。</div>
+          <div class="speech-output-panel" aria-label="質問の音声出力">
+            <div class="speech-output-actions">
+              <button id="replayQuestionSpeechBtn" class="button button-secondary button-small" type="button">質問をもう一度聞く</button>
+              <button id="stopQuestionSpeechBtn" class="button button-secondary button-small" type="button">読み上げ停止</button>
+              <button id="toggleQuestionSpeechBtn" class="button button-ghost button-small" type="button" aria-pressed="true">音声ON</button>
+            </div>
+            <p id="questionSpeechStatus" class="speech-output-status" role="status" aria-live="polite">質問は音声でも読み上げられます。</p>
+          </div>
         </div>
 
         <details class="timeline-panel" aria-labelledby="timelineTitle">

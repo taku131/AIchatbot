@@ -528,6 +528,45 @@ textarea:focus {
   line-height: 1.7;
 }
 
+.speech-output-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #ffffff;
+}
+
+.speech-output-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.speech-output-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.speech-output-panel.is-speaking {
+  border-color: rgba(20, 108, 95, 0.42);
+  background: var(--primary-soft);
+}
+
+.speech-output-panel.is-muted {
+  background: var(--surface-soft);
+}
+
+.speech-output-panel.is-error {
+  border-color: rgba(184, 52, 52, 0.42);
+  background: var(--danger-soft);
+}
+
 .inline-feedback,
 .history-detail p {
   margin: 8px 0 0;

@@ -8,6 +8,7 @@
   var ACTIVE_ACCOUNT_STORAGE_KEY = "aiInterviewPrototype.activeAccountId";
   var AI_SETTINGS_KEY = "aiInterviewPrototype.openAiSettings";
   var AI_SESSION_KEY = "aiInterviewPrototype.openAiSessionKey";
+  var QUESTION_SPEECH_SETTINGS_KEY = "aiInterviewPrototype.questionSpeechSettings";
 
   var DEFAULT_SETTINGS = {
     company: "",
@@ -153,6 +154,18 @@
     finalTranscript: "",
     lastError: "",
     pendingClip: null
+  };
+
+  var questionSpeechState = {
+    isSupported: false,
+    isSpeaking: false,
+    isMuted: false,
+    voices: [],
+    selectedVoice: null,
+    lastQuestion: "",
+    rate: 0.95,
+    pitch: 1,
+    volume: 1
   };
 
   function $(id) {
@@ -321,6 +334,9 @@
 
   function showView(viewId) {
     var nextViewId = (!appState.activeAccountId && viewId !== "accountView" && viewId !== "settingsView") ? "accountView" : viewId;
+    if (nextViewId !== "interviewView") {
+      stopQuestionSpeech();
+    }
     ["accountView", "settingsView", "workspaceView", "setupView", "interviewView", "feedbackView", "historyView"].forEach(function (id) {
       var element = $(id);
       if (element) {
@@ -1551,6 +1567,8 @@
     if (message) {
       setText("feedbackSummary", message);
     }
+    updateQuestionSpeechButtons();
+    updateVoiceInputButtons();
   }
 
   async function startInterview(event) {
@@ -1614,6 +1632,7 @@
     setBusy(true, "評価基準を生成中です...");
     appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, settings);
     setText("currentQuestion", appState.currentQuestion);
+    speakQuestion(appState.currentQuestion);
     setText("feedbackSummary", "回答を入力してください。");
     setBusy(false);
     var answerInput = $("answerInput");
@@ -1624,6 +1643,7 @@
   }
 
   async function finalizeVoiceCaptureBeforeSubmit() {
+    stopQuestionSpeech();
     if (voiceInputState.isListening && voiceInputState.recognition) {
       try {
         voiceInputState.recognition.stop();
@@ -1744,6 +1764,7 @@
     setBusy(true, "次の評価基準を生成中です...");
     appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, appState.settings);
     setText("currentQuestion", appState.currentQuestion);
+    speakQuestion(appState.currentQuestion);
     setText("progressText", "質問 " + (appState.questionIndex + 1) + " / " + appState.settings.questionCount);
     setText("feedbackSummary", "次の質問に回答してください。評価の詳細は終了後に確認できます。");
     setBusy(false);
@@ -2198,6 +2219,199 @@
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
   }
 
+  function loadQuestionSpeechSettings() {
+    try {
+      var parsed = JSON.parse(localStorage.getItem(QUESTION_SPEECH_SETTINGS_KEY) || "{}") || {};
+      return {
+        isMuted: Boolean(parsed.isMuted),
+        rate: Number.isFinite(Number(parsed.rate)) ? Math.max(0.7, Math.min(1.2, Number(parsed.rate))) : 0.95,
+        pitch: Number.isFinite(Number(parsed.pitch)) ? Math.max(0.7, Math.min(1.3, Number(parsed.pitch))) : 1,
+        volume: Number.isFinite(Number(parsed.volume)) ? Math.max(0, Math.min(1, Number(parsed.volume))) : 1,
+        voiceURI: parsed.voiceURI || ""
+      };
+    } catch (error) {
+      return {
+        isMuted: false,
+        rate: 0.95,
+        pitch: 1,
+        volume: 1,
+        voiceURI: ""
+      };
+    }
+  }
+
+  function saveQuestionSpeechSettings() {
+    try {
+      localStorage.setItem(QUESTION_SPEECH_SETTINGS_KEY, JSON.stringify({
+        isMuted: questionSpeechState.isMuted,
+        rate: questionSpeechState.rate,
+        pitch: questionSpeechState.pitch,
+        volume: questionSpeechState.volume,
+        voiceURI: questionSpeechState.selectedVoice ? questionSpeechState.selectedVoice.voiceURI : ""
+      }));
+    } catch (error) {
+      console.warn("Question speech settings could not be saved:", error);
+    }
+  }
+
+  function pickQuestionVoice(voiceURI) {
+    var voices = questionSpeechState.voices || [];
+    return voices.find(function (voice) {
+      return voice.voiceURI === voiceURI;
+    }) || voices.find(function (voice) {
+      return String(voice.lang || "").toLowerCase() === "ja-jp";
+    }) || voices.find(function (voice) {
+      return String(voice.lang || "").toLowerCase().indexOf("ja") === 0;
+    }) || voices[0] || null;
+  }
+
+  function setQuestionSpeechUiState(state) {
+    var panel = document.querySelector(".speech-output-panel");
+    if (!panel || !panel.classList) {
+      return;
+    }
+    panel.classList.remove("is-speaking", "is-muted", "is-error");
+    if (state) {
+      panel.classList.add(state);
+    }
+  }
+
+  function updateQuestionSpeechButtons() {
+    var replayButton = $("replayQuestionSpeechBtn");
+    var stopButton = $("stopQuestionSpeechBtn");
+    var toggleButton = $("toggleQuestionSpeechBtn");
+    var supported = questionSpeechState.isSupported;
+    if (replayButton) {
+      replayButton.disabled = !supported || !questionSpeechState.lastQuestion || appState.isBusy;
+    }
+    if (stopButton) {
+      stopButton.disabled = !supported || !questionSpeechState.isSpeaking;
+    }
+    if (toggleButton) {
+      toggleButton.disabled = !supported;
+      toggleButton.textContent = questionSpeechState.isMuted ? "音声OFF" : "音声ON";
+      toggleButton.setAttribute("aria-pressed", questionSpeechState.isMuted ? "false" : "true");
+    }
+    if (!supported) {
+      setText("questionSpeechStatus", "このブラウザでは質問読み上げを利用できません。");
+      setQuestionSpeechUiState("is-error");
+    } else if (questionSpeechState.isMuted) {
+      setText("questionSpeechStatus", "質問読み上げはOFFです。");
+      setQuestionSpeechUiState("is-muted");
+    } else if (questionSpeechState.isSpeaking) {
+      setText("questionSpeechStatus", "面接官の質問を読み上げています。");
+      setQuestionSpeechUiState("is-speaking");
+    } else {
+      setText("questionSpeechStatus", "質問は音声でも読み上げられます。");
+      setQuestionSpeechUiState("");
+    }
+  }
+
+  function stopQuestionSpeech() {
+    if (window.speechSynthesis && typeof window.speechSynthesis.cancel === "function") {
+      window.speechSynthesis.cancel();
+    }
+    questionSpeechState.isSpeaking = false;
+    updateQuestionSpeechButtons();
+  }
+
+  function speakQuestion(question, options) {
+    var safeQuestion = String(question || "").trim();
+    var opts = options || {};
+    questionSpeechState.lastQuestion = safeQuestion || questionSpeechState.lastQuestion;
+    if (!questionSpeechState.isSupported || !safeQuestion) {
+      updateQuestionSpeechButtons();
+      return;
+    }
+    if (questionSpeechState.isMuted && !opts.force) {
+      updateQuestionSpeechButtons();
+      return;
+    }
+    if (voiceInputState.isListening || voiceInputState.isRecording) {
+      updateQuestionSpeechButtons();
+      return;
+    }
+    stopQuestionSpeech();
+    var utterance = new window.SpeechSynthesisUtterance(safeQuestion);
+    utterance.lang = "ja-JP";
+    utterance.rate = questionSpeechState.rate;
+    utterance.pitch = questionSpeechState.pitch;
+    utterance.volume = questionSpeechState.volume;
+    if (questionSpeechState.selectedVoice) {
+      utterance.voice = questionSpeechState.selectedVoice;
+    }
+    utterance.onstart = function () {
+      questionSpeechState.isSpeaking = true;
+      updateQuestionSpeechButtons();
+    };
+    utterance.onend = function () {
+      questionSpeechState.isSpeaking = false;
+      updateQuestionSpeechButtons();
+      var answerInput = $("answerInput");
+      if (answerInput && !appState.isBusy) {
+        answerInput.focus();
+      }
+    };
+    utterance.onerror = function () {
+      questionSpeechState.isSpeaking = false;
+      setText("questionSpeechStatus", "質問の読み上げでエラーが発生しました。");
+      setQuestionSpeechUiState("is-error");
+      updateQuestionSpeechButtons();
+    };
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function replayQuestionSpeech(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    speakQuestion(questionSpeechState.lastQuestion || appState.currentQuestion, { force: true });
+  }
+
+  function stopQuestionSpeechFromEvent(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    stopQuestionSpeech();
+  }
+
+  function toggleQuestionSpeech(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    questionSpeechState.isMuted = !questionSpeechState.isMuted;
+    if (questionSpeechState.isMuted) {
+      stopQuestionSpeech();
+    }
+    saveQuestionSpeechSettings();
+    updateQuestionSpeechButtons();
+  }
+
+  function setupQuestionSpeech() {
+    var settings = loadQuestionSpeechSettings();
+    questionSpeechState.isSupported = Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance);
+    questionSpeechState.isMuted = settings.isMuted;
+    questionSpeechState.rate = settings.rate;
+    questionSpeechState.pitch = settings.pitch;
+    questionSpeechState.volume = settings.volume;
+    if (!questionSpeechState.isSupported) {
+      updateQuestionSpeechButtons();
+      return;
+    }
+    function refreshVoices() {
+      questionSpeechState.voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+      questionSpeechState.selectedVoice = pickQuestionVoice(settings.voiceURI);
+      updateQuestionSpeechButtons();
+    }
+    refreshVoices();
+    if (typeof window.speechSynthesis.addEventListener === "function") {
+      window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
+    } else {
+      window.speechSynthesis.onvoiceschanged = refreshVoices;
+    }
+    updateQuestionSpeechButtons();
+  }
+
   function getSupportedAudioMimeType() {
     if (!window.MediaRecorder || typeof window.MediaRecorder.isTypeSupported !== "function") {
       return "";
@@ -2319,7 +2533,7 @@
     var startButton = $("startVoiceInputBtn");
     var stopButton = $("stopVoiceInputBtn");
     if (startButton) {
-      startButton.disabled = !voiceInputState.isSupported || voiceInputState.isListening;
+      startButton.disabled = !voiceInputState.isSupported || voiceInputState.isListening || questionSpeechState.isSpeaking;
     }
     if (stopButton) {
       stopButton.disabled = !voiceInputState.isSupported || !voiceInputState.isListening;
@@ -2392,6 +2606,7 @@
     if (!voiceInputState.recognition || voiceInputState.isListening) {
       return;
     }
+    stopQuestionSpeech();
     var answerInput = $("answerInput");
     voiceInputState.baseAnswer = answerInput && typeof answerInput.value === "string" ? answerInput.value : "";
     voiceInputState.finalTranscript = "";
@@ -2430,6 +2645,9 @@
     on("startInterviewBtn", "click", startInterview);
     on("submitAnswerBtn", "click", submitAnswer);
     on("finishInterviewBtn", "click", finishInterview);
+    on("replayQuestionSpeechBtn", "click", replayQuestionSpeech);
+    on("stopQuestionSpeechBtn", "click", stopQuestionSpeechFromEvent);
+    on("toggleQuestionSpeechBtn", "click", toggleQuestionSpeech);
     on("startVoiceInputBtn", "click", startVoiceInput);
     on("stopVoiceInputBtn", "click", stopVoiceInput);
     on("showWorkspaceBtn", "click", showWorkspace);
@@ -2450,6 +2668,7 @@
       });
     }
     window.addEventListener("beforeunload", function () {
+      stopQuestionSpeech();
       releaseAudioClips();
       stopVoiceMediaStream();
     });
@@ -2457,6 +2676,7 @@
 
   function init() {
     bindEvents();
+    setupQuestionSpeech();
     setupVoiceInput();
     renderAccounts();
     renderAiSettings();
