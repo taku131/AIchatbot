@@ -258,6 +258,7 @@
           <label for="interviewerTypeSelect">AI面接官タイプ</label>
           <input id="interviewerTypeSelect" name="interviewerType" type="hidden" value="friendly">
           <div id="interviewerAvatarGrid" class="interviewer-avatar-grid" role="radiogroup" aria-label="AI面接官タイプ"></div>
+          <p id="interviewerPersonaDescription" class="interviewer-persona-description"></p>
         </div>
         <div class="field">
           <label for="questionCountSelect">質問数</label>
@@ -296,7 +297,10 @@
       <div class="interview-layout">
         <div class="question-area" aria-live="polite">
           <div class="interviewer-question-row">
-            <img id="currentInterviewerAvatar" class="current-interviewer-avatar" src="./assets/interviewers/friendly.png" alt="">
+            <div class="current-interviewer-panel">
+              <img id="currentInterviewerAvatar" class="current-interviewer-avatar" src="./assets/interviewers/friendly.png" alt="">
+              <p id="currentInterviewerPersona" class="current-interviewer-persona"></p>
+            </div>
             <div id="currentQuestion" class="question-card">設定を完了すると、ここに質問が表示されます。</div>
           </div>
           <div class="speech-output-panel" aria-label="質問の音声出力">

@@ -72,12 +72,78 @@
   };
 
   var INTERVIEWER_TYPES = [
-    { id: "friendly", label: "優しめ", image: "./assets/interviewers/friendly.png" },
-    { id: "strict", label: "厳しめ", image: "./assets/interviewers/strict.png" },
-    { id: "deep_dive", label: "深掘り重視", image: "./assets/interviewers/deep_dive.png" },
-    { id: "technical", label: "技術重視", image: "./assets/interviewers/technical.png" },
-    { id: "research", label: "研究重視", image: "./assets/interviewers/research.png" },
-    { id: "coach", label: "改善コーチ", image: "./assets/interviewers/coach.png" }
+    {
+      id: "friendly",
+      label: "優しめ",
+      image: "./assets/interviewers/friendly.png",
+      description: "話しやすさを保ちながら、経験や考えを自然に引き出します。",
+      voiceProfile: {
+        rate: 0.98,
+        pitch: 1.08,
+        volume: 1,
+        voiceHints: ["nanami", "haruka", "kyoko", "ayumi", "sayaka", "female"]
+      }
+    },
+    {
+      id: "strict",
+      label: "厳しめ",
+      image: "./assets/interviewers/strict.png",
+      description: "回答の曖昧さや根拠不足を見つけ、実戦に近い圧で確認します。",
+      voiceProfile: {
+        rate: 0.88,
+        pitch: 0.9,
+        volume: 1,
+        voiceHints: ["ichiro", "keita", "otoya", "male"]
+      }
+    },
+    {
+      id: "deep_dive",
+      label: "深掘り重視",
+      image: "./assets/interviewers/deep_dive.png",
+      description: "一つの回答から理由・背景・再現性まで掘り下げます。",
+      voiceProfile: {
+        rate: 0.86,
+        pitch: 0.95,
+        volume: 1,
+        voiceHints: ["keita", "otoya", "ichiro", "male"]
+      }
+    },
+    {
+      id: "technical",
+      label: "技術重視",
+      image: "./assets/interviewers/technical.png",
+      description: "技術選定、設計判断、実装理解を具体的に確かめます。",
+      voiceProfile: {
+        rate: 0.96,
+        pitch: 0.92,
+        volume: 1,
+        voiceHints: ["keita", "otoya", "ichiro", "male"]
+      }
+    },
+    {
+      id: "research",
+      label: "研究重視",
+      image: "./assets/interviewers/research.png",
+      description: "研究目的、手法、検証、独自性を論理の流れで確認します。",
+      voiceProfile: {
+        rate: 0.9,
+        pitch: 1,
+        volume: 1,
+        voiceHints: ["nanami", "kyoko", "haruka", "ayumi", "female"]
+      }
+    },
+    {
+      id: "coach",
+      label: "改善コーチ",
+      image: "./assets/interviewers/coach.png",
+      description: "回答の良い点と直すべき点を見つけ、次の改善につなげます。",
+      voiceProfile: {
+        rate: 1.02,
+        pitch: 1.08,
+        volume: 1,
+        voiceHints: ["nanami", "kyoko", "haruka", "ayumi", "female"]
+      }
+    }
   ];
 
   var questionBank = {
@@ -268,6 +334,17 @@
     }) || INTERVIEWER_TYPES[0];
   }
 
+  function formatInterviewerType(value) {
+    var type = getInterviewerType(value);
+    return type.label + " / " + type.description;
+  }
+
+  function getCurrentInterviewerTypeId() {
+    return appState.settings && appState.settings.interviewerType
+      ? appState.settings.interviewerType
+      : getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType);
+  }
+
   function renderInterviewerAvatarGrid() {
     var grid = $("interviewerAvatarGrid");
     var currentValue = getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType);
@@ -294,12 +371,19 @@
 
   function updateCurrentInterviewerAvatar(value) {
     var avatar = $("currentInterviewerAvatar");
+    var persona = $("currentInterviewerPersona");
+    var setupDescription = $("interviewerPersonaDescription");
     var type = getInterviewerType(value || DEFAULT_SETTINGS.interviewerType);
-    if (!avatar) {
-      return;
+    if (avatar) {
+      avatar.src = type.image;
+      avatar.alt = "";
     }
-    avatar.src = type.image;
-    avatar.alt = "";
+    if (persona) {
+      persona.textContent = type.description;
+    }
+    if (setupDescription) {
+      setupDescription.textContent = "質問の思考: " + type.description;
+    }
   }
 
   function selectInterviewerType(value) {
@@ -1083,7 +1167,7 @@
       "面接タイプ: " + formatInterviewTypeLabel(safeSettings.interviewType),
       "対象区分: " + (safeSettings.targetType || "未設定"),
       "カテゴリ: " + formatCategoryLabel(safeSettings.category),
-      "面接官タイプ: " + (safeSettings.interviewerType || "未設定"),
+      "面接官タイプ: " + formatInterviewerType(safeSettings.interviewerType),
       "自己メモ: " + (safeSettings.userProfile || "未入力"),
       sourceEntries.length ? "保存済みES一覧:\n" + sourceEntries.map(function (entry, index) {
         return [
@@ -2290,16 +2374,14 @@
         isMuted: Boolean(parsed.isMuted),
         rate: Number.isFinite(Number(parsed.rate)) ? Math.max(0.7, Math.min(1.2, Number(parsed.rate))) : 0.95,
         pitch: Number.isFinite(Number(parsed.pitch)) ? Math.max(0.7, Math.min(1.3, Number(parsed.pitch))) : 1,
-        volume: Number.isFinite(Number(parsed.volume)) ? Math.max(0, Math.min(1, Number(parsed.volume))) : 1,
-        voiceURI: parsed.voiceURI || ""
+        volume: Number.isFinite(Number(parsed.volume)) ? Math.max(0, Math.min(1, Number(parsed.volume))) : 1
       };
     } catch (error) {
       return {
         isMuted: false,
         rate: 0.95,
         pitch: 1,
-        volume: 1,
-        voiceURI: ""
+        volume: 1
       };
     }
   }
@@ -2310,23 +2392,47 @@
         isMuted: questionSpeechState.isMuted,
         rate: questionSpeechState.rate,
         pitch: questionSpeechState.pitch,
-        volume: questionSpeechState.volume,
-        voiceURI: questionSpeechState.selectedVoice ? questionSpeechState.selectedVoice.voiceURI : ""
+        volume: questionSpeechState.volume
       }));
     } catch (error) {
       console.warn("Question speech settings could not be saved:", error);
     }
   }
 
-  function pickQuestionVoice(voiceURI) {
+  function scoreQuestionVoice(voice, profile) {
+    var name = String((voice && voice.name) || "").toLowerCase();
+    var uri = String((voice && voice.voiceURI) || "").toLowerCase();
+    var lang = String((voice && voice.lang) || "").toLowerCase();
+    var hints = profile && Array.isArray(profile.voiceHints) ? profile.voiceHints : [];
+    var score = 0;
+    if (lang === "ja-jp") {
+      score += 30;
+    } else if (lang.indexOf("ja") === 0) {
+      score += 18;
+    }
+    if (voice && voice.default) {
+      score += 4;
+    }
+    if (voice && voice.localService) {
+      score += 2;
+    }
+    hints.forEach(function (hint) {
+      var safeHint = String(hint || "").toLowerCase();
+      if (safeHint && (name.indexOf(safeHint) !== -1 || uri.indexOf(safeHint) !== -1)) {
+        score += 12;
+      }
+    });
+    return score;
+  }
+
+  function pickQuestionVoice(profile) {
     var voices = questionSpeechState.voices || [];
-    return voices.find(function (voice) {
-      return voice.voiceURI === voiceURI;
-    }) || voices.find(function (voice) {
-      return String(voice.lang || "").toLowerCase() === "ja-jp";
-    }) || voices.find(function (voice) {
-      return String(voice.lang || "").toLowerCase().indexOf("ja") === 0;
-    }) || voices[0] || null;
+    if (!voices.length) {
+      return null;
+    }
+    return voices.slice().sort(function (a, b) {
+      return scoreQuestionVoice(b, profile) - scoreQuestionVoice(a, profile);
+    })[0] || null;
   }
 
   function setQuestionSpeechUiState(state) {
@@ -2396,13 +2502,17 @@
       return;
     }
     stopQuestionSpeech();
+    var interviewerType = getInterviewerType(getCurrentInterviewerTypeId());
+    var profile = interviewerType.voiceProfile || {};
     var utterance = new window.SpeechSynthesisUtterance(safeQuestion);
     utterance.lang = "ja-JP";
-    utterance.rate = questionSpeechState.rate;
-    utterance.pitch = questionSpeechState.pitch;
-    utterance.volume = questionSpeechState.volume;
-    if (questionSpeechState.selectedVoice) {
-      utterance.voice = questionSpeechState.selectedVoice;
+    utterance.rate = Number.isFinite(Number(profile.rate)) ? Number(profile.rate) : questionSpeechState.rate;
+    utterance.pitch = Number.isFinite(Number(profile.pitch)) ? Number(profile.pitch) : questionSpeechState.pitch;
+    utterance.volume = Number.isFinite(Number(profile.volume)) ? Number(profile.volume) : questionSpeechState.volume;
+    var selectedVoice = pickQuestionVoice(profile);
+    questionSpeechState.selectedVoice = selectedVoice;
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
     }
     utterance.onstart = function () {
       questionSpeechState.isSpeaking = true;
@@ -2464,7 +2574,7 @@
     }
     function refreshVoices() {
       questionSpeechState.voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
-      questionSpeechState.selectedVoice = pickQuestionVoice(settings.voiceURI);
+      questionSpeechState.selectedVoice = pickQuestionVoice(getInterviewerType(getCurrentInterviewerTypeId()).voiceProfile);
       updateQuestionSpeechButtons();
     }
     refreshVoices();

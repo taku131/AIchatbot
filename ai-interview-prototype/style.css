@@ -436,6 +436,17 @@ h3 {
   box-shadow: 0 0 0 3px rgba(20, 108, 95, 0.16);
 }
 
+.interviewer-persona-description {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
 .field,
 .answer-panel {
   display: flex;
@@ -568,15 +579,33 @@ textarea:focus {
   align-items: stretch;
 }
 
+.current-interviewer-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  align-content: start;
+}
+
 .current-interviewer-avatar {
   width: 100%;
-  height: 100%;
-  min-height: 180px;
-  max-height: 260px;
+  aspect-ratio: 1;
+  min-height: 0;
+  max-height: 220px;
   border-radius: var(--radius);
   border: 1px solid var(--line);
   object-fit: cover;
   background: var(--surface-soft);
+}
+
+.current-interviewer-persona {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
 }
 
 .speech-output-panel {

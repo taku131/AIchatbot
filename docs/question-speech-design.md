@@ -19,14 +19,15 @@
 - `rate`
 - `pitch`
 - `volume`
-- `voiceURI`
 
+面接官タイプごとの声質はコード上の `voiceProfile` で定義し、利用可能な日本語音声から近いものを実行時に選ぶ。固定の `voiceURI` は保存しない。
 履歴ログには読み上げ音声、再生状態、`SpeechSynthesisUtterance`、`SpeechSynthesisVoice` は保存しない。
 
 ## フォールバック
 
 - `speechSynthesis` または `SpeechSynthesisUtterance` がない場合は、質問テキスト表示だけで動作する。
 - 日本語音声が見つからない場合は、利用可能な音声にフォールバックする。
+- 面接官タイプごとに `rate`、`pitch`、`voiceHints` を切り替える。
 - `voiceschanged` に対応し、ブラウザ側で音声一覧が遅延ロードされるケースを吸収する。
 
 ## 実装状況
