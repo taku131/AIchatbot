@@ -403,6 +403,39 @@ h3 {
   margin: 0;
 }
 
+.interviewer-avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.interviewer-avatar-option {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.interviewer-avatar-option img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.interviewer-avatar-option:hover {
+  border-color: var(--primary);
+}
+
+.interviewer-avatar-option.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(20, 108, 95, 0.16);
+}
+
 .field,
 .answer-panel {
   display: flex;
@@ -518,7 +551,6 @@ textarea:focus {
 }
 
 .question-card {
-  margin-top: 8px;
   min-height: 180px;
   padding: clamp(18px, 3vw, 28px);
   border-radius: var(--radius);
@@ -526,6 +558,25 @@ textarea:focus {
   font-size: clamp(1.15rem, 2.4vw, 1.6rem);
   font-weight: 700;
   line-height: 1.7;
+}
+
+.interviewer-question-row {
+  display: grid;
+  grid-template-columns: minmax(132px, 0.28fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 8px;
+  align-items: stretch;
+}
+
+.current-interviewer-avatar {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  max-height: 260px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  object-fit: cover;
+  background: var(--surface-soft);
 }
 
 .speech-output-panel {
@@ -911,6 +962,14 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .interviewer-question-row {
+    grid-template-columns: 120px minmax(0, 1fr);
+  }
+
+  .current-interviewer-avatar {
+    min-height: 140px;
+  }
+
   .score-badge {
     width: 100%;
   }
@@ -937,6 +996,19 @@ textarea:focus {
 
   .button {
     width: 100%;
+  }
+
+  .interviewer-avatar-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interviewer-question-row {
+    grid-template-columns: 1fr;
+  }
+
+  .current-interviewer-avatar {
+    aspect-ratio: 1;
+    max-height: none;
   }
 
   .voice-controls {

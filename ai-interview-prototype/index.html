@@ -256,14 +256,8 @@
         </div>
         <div class="field">
           <label for="interviewerTypeSelect">AI面接官タイプ</label>
-          <select id="interviewerTypeSelect" name="interviewerType">
-            <option value="friendly">優しめ</option>
-            <option value="strict">厳しめ</option>
-            <option value="deep_dive">深掘り重視</option>
-            <option value="technical">技術重視</option>
-            <option value="research">研究重視</option>
-            <option value="coach">改善コーチ</option>
-          </select>
+          <input id="interviewerTypeSelect" name="interviewerType" type="hidden" value="friendly">
+          <div id="interviewerAvatarGrid" class="interviewer-avatar-grid" role="radiogroup" aria-label="AI面接官タイプ"></div>
         </div>
         <div class="field">
           <label for="questionCountSelect">質問数</label>
@@ -301,8 +295,10 @@
 
       <div class="interview-layout">
         <div class="question-area" aria-live="polite">
-          <p class="panel-label">AI質問</p>
-          <div id="currentQuestion" class="question-card">設定を完了すると、ここに質問が表示されます。</div>
+          <div class="interviewer-question-row">
+            <img id="currentInterviewerAvatar" class="current-interviewer-avatar" src="./assets/interviewers/friendly.png" alt="">
+            <div id="currentQuestion" class="question-card">設定を完了すると、ここに質問が表示されます。</div>
+          </div>
           <div class="speech-output-panel" aria-label="質問の音声出力">
             <div class="speech-output-actions">
               <button id="replayQuestionSpeechBtn" class="button button-secondary button-small" type="button">質問をもう一度聞く</button>

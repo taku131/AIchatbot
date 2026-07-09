@@ -71,6 +71,15 @@
     hr: "人事面接"
   };
 
+  var INTERVIEWER_TYPES = [
+    { id: "friendly", label: "優しめ", image: "./assets/interviewers/friendly.png" },
+    { id: "strict", label: "厳しめ", image: "./assets/interviewers/strict.png" },
+    { id: "deep_dive", label: "深掘り重視", image: "./assets/interviewers/deep_dive.png" },
+    { id: "technical", label: "技術重視", image: "./assets/interviewers/technical.png" },
+    { id: "research", label: "研究重視", image: "./assets/interviewers/research.png" },
+    { id: "coach", label: "改善コーチ", image: "./assets/interviewers/coach.png" }
+  ];
+
   var questionBank = {
     self_pr: [
       "あなたの強みを、応募先でどのように活かせるかを含めて教えてください。",
@@ -251,6 +260,53 @@
 
   function formatInterviewTypeLabel(value) {
     return INTERVIEW_TYPE_LABELS[value] || "面接";
+  }
+
+  function getInterviewerType(value) {
+    return INTERVIEWER_TYPES.find(function (type) {
+      return type.id === value;
+    }) || INTERVIEWER_TYPES[0];
+  }
+
+  function renderInterviewerAvatarGrid() {
+    var grid = $("interviewerAvatarGrid");
+    var currentValue = getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType);
+    if (!grid) {
+      return;
+    }
+    grid.textContent = "";
+    INTERVIEWER_TYPES.forEach(function (type) {
+      var button = document.createElement("button");
+      var image = document.createElement("img");
+      button.type = "button";
+      button.className = "interviewer-avatar-option" + (type.id === currentValue ? " is-selected" : "");
+      button.dataset.interviewerType = type.id;
+      button.dataset.action = "select-interviewer-type";
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", type.id === currentValue ? "true" : "false");
+      button.setAttribute("aria-label", type.label);
+      image.src = type.image;
+      image.alt = "";
+      button.appendChild(image);
+      grid.appendChild(button);
+    });
+  }
+
+  function updateCurrentInterviewerAvatar(value) {
+    var avatar = $("currentInterviewerAvatar");
+    var type = getInterviewerType(value || DEFAULT_SETTINGS.interviewerType);
+    if (!avatar) {
+      return;
+    }
+    avatar.src = type.image;
+    avatar.alt = "";
+  }
+
+  function selectInterviewerType(value) {
+    var type = getInterviewerType(value);
+    setValue("interviewerTypeSelect", type.id);
+    updateCurrentInterviewerAvatar(type.id);
+    renderInterviewerAvatarGrid();
   }
 
   function loadAccounts() {
@@ -1602,6 +1658,7 @@
     appState.pendingSourceCompanyId = sourceCompanyId || null;
     renderSourceEsPreview(sourceCompany, sourceEntries);
     appState.settings = settings;
+    updateCurrentInterviewerAvatar(settings.interviewerType);
     appState.questionIndex = 0;
     appState.finished = false;
     appState.currentExpectedAnswerData = null;
@@ -2215,6 +2272,13 @@
     }
   }
 
+  function handleInterviewerAvatarClick(event) {
+    var target = event.target && event.target.closest ? event.target.closest("[data-action='select-interviewer-type']") : null;
+    if (target && target.dataset.interviewerType) {
+      selectInterviewerType(target.dataset.interviewerType);
+    }
+  }
+
   function getSpeechRecognitionConstructor() {
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
   }
@@ -2639,6 +2703,7 @@
     on("esMaxCharsInput", "input", updateEsCharCount);
     on("esEntryList", "click", handleEsEntryListClick);
     on("setupCompanySelect", "change", handleSetupCompanySelectChange);
+    on("interviewerAvatarGrid", "click", handleInterviewerAvatarClick);
     on("saveAiSettingsBtn", "click", saveAiSettingsFromForm);
     on("testAiConnectionBtn", "click", testAiConnection);
     on("clearAiSettingsBtn", "click", clearAiSettings);
@@ -2678,6 +2743,7 @@
     bindEvents();
     setupQuestionSpeech();
     setupVoiceInput();
+    selectInterviewerType(getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType));
     renderAccounts();
     renderAiSettings();
     try {
