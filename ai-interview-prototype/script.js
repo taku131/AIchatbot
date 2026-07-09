@@ -1056,6 +1056,13 @@
     };
   }
 
+  function objectArraySchema(properties) {
+    return {
+      type: "array",
+      items: jsonSchema(properties)
+    };
+  }
+
   function axisScoreSchema() {
     var props = {};
     EVALUATION_AXES.forEach(function (axis) {
@@ -1078,11 +1085,24 @@
 
   function expectedAnswerDataSchema() {
     return jsonSchema({
+      questionCategory: { type: "string" },
+      intentLabel: { type: "string" },
       questionIntent: { type: "string" },
       mustInclude: stringArraySchema(),
       shouldInclude: stringArraySchema(),
       goodSignals: stringArraySchema(),
       riskSignals: stringArraySchema(),
+      evidenceFields: stringArraySchema(),
+      rubricLevels: objectArraySchema({
+        axis: { type: "string" },
+        level: { type: "number" },
+        label: { type: "string" },
+        description: { type: "string" },
+        requiredEvidenceKeys: stringArraySchema()
+      }),
+      fairnessRisks: stringArraySchema(),
+      unverifiedClaims: stringArraySchema(),
+      scoreConfidence: { type: "string" },
       referenceFactsFromES: stringArraySchema(),
       suggestedStructure: stringArraySchema(),
       followUpFocus: stringArraySchema(),
@@ -1113,6 +1133,9 @@
       improvements: stringArraySchema(),
       issues: stringArraySchema(),
       missingElements: stringArraySchema(),
+      unverifiedClaims: stringArraySchema(),
+      fairnessFlags: stringArraySchema(),
+      scoreConfidence: { type: "string" },
       esConsistency: esConsistencySchema(),
       scoringRationale: { type: "string" },
       deepDiveQuestion: { type: "string" },
@@ -1187,6 +1210,166 @@
     }).filter(Boolean);
   }
 
+  var EXPECTED_ANSWER_CATEGORY_TEMPLATES = {
+    self_pr: {
+      intentLabel: "strength_job_fit",
+      evidenceFields: ["claim", "specific_episode", "action", "result", "learning", "job_relevance"],
+      mustInclude: ["強みの結論", "強みを示す具体的経験", "本人の行動", "成果または変化", "応募職種での活かし方"],
+      shouldInclude: ["行動の理由", "周囲への影響", "再現できる行動特性"],
+      followUpFocus: ["その強みを再現できる根拠", "他者と比べた独自性", "職種での具体的な活用場面"]
+    },
+    motivation: {
+      intentLabel: "company_role_motivation",
+      evidenceFields: ["company_understanding", "personal_reason", "role_fit", "past_evidence", "future_contribution"],
+      mustInclude: ["志望理由の結論", "企業や事業への理解", "自分の経験や価値観との接点", "職種での貢献"],
+      shouldInclude: ["同業他社ではない理由", "入社後に取り組みたいこと", "企業メモやESとの一貫性"],
+      followUpFocus: ["なぜこの企業なのか", "なぜこの職種なのか", "入社後の貢献の具体性"]
+    },
+    student_life: {
+      intentLabel: "behavioral_achievement",
+      evidenceFields: ["context", "challenge", "team_role", "action", "result", "learning"],
+      mustInclude: ["取り組みの背景", "課題", "本人の役割", "具体的行動", "結果", "学び"],
+      shouldInclude: ["周囲との関わり", "工夫した点", "次に活かせる再現性"],
+      followUpFocus: ["本人の貢献範囲", "困難への対処", "成果の根拠"]
+    },
+    research: {
+      intentLabel: "research_thinking",
+      evidenceFields: ["research_theme", "background", "purpose", "method", "difficulty", "originality", "result", "plain_language_summary"],
+      mustInclude: ["研究テーマ", "背景と目的", "手法", "本人の工夫", "結果または現状", "専門外にも伝わる説明"],
+      shouldInclude: ["仮説検証", "失敗や改善", "仕事への転用可能性"],
+      followUpFocus: ["研究の新規性", "検証方法", "本人の貢献範囲"]
+    },
+    technical: {
+      intentLabel: "technical_problem_solving",
+      evidenceFields: ["problem", "technical_choice", "implementation_role", "tradeoff", "debugging", "test", "outcome"],
+      mustInclude: ["解いた課題", "技術選定の理由", "担当範囲", "実装上の判断", "検証やテスト", "結果"],
+      shouldInclude: ["計算量や性能", "代替案との比較", "障害対応や改善"],
+      followUpFocus: ["なぜその技術を選んだか", "トレードオフ", "品質をどう担保したか"]
+    },
+    failure: {
+      intentLabel: "reflection_recovery",
+      evidenceFields: ["failure_context", "own_responsibility", "cause_analysis", "recovery_action", "prevention", "learning"],
+      mustInclude: ["失敗の状況", "自分の責任範囲", "原因分析", "改善行動", "学び", "再発防止"],
+      shouldInclude: ["周囲への影響", "現在の行動変化", "過度な責任転嫁をしない説明"],
+      followUpFocus: ["原因をどう特定したか", "今なら何を変えるか", "学びの再現性"]
+    },
+    career: {
+      intentLabel: "career_alignment",
+      evidenceFields: ["career_goal", "reason", "current_gap", "learning_plan", "role_alignment"],
+      mustInclude: ["将来像", "そう考える理由", "現在の経験との接続", "今後の学習や行動", "応募職種との整合"],
+      shouldInclude: ["短期と中長期のつながり", "現実的な成長計画", "企業で実現したいこと"],
+      followUpFocus: ["なぜそのキャリアなのか", "足りない力をどう補うか", "企業との相互適合"]
+    },
+    reverse_question: {
+      intentLabel: "mutual_fit_inquiry",
+      evidenceFields: ["question_relevance", "company_understanding", "decision_need", "depth", "professionalism"],
+      mustInclude: ["企業理解に基づく質問", "職務やチームとの関連", "自分が判断したい観点", "公開情報だけで分かる質問にしない"],
+      shouldInclude: ["質問の意図", "入社後の行動につながる観点", "面接官が答えやすい具体性"],
+      followUpFocus: ["なぜそれを確認したいか", "回答をどう判断に使うか", "志望動機との接続"]
+    },
+    default: {
+      intentLabel: "general_interview_fit",
+      evidenceFields: ["answer_relevance", "claim", "context", "action", "result", "learning", "job_relevance"],
+      mustInclude: ["質問への直接回答", "根拠になる具体的経験または判断", "本人の行動", "結果", "学びや再現性"],
+      shouldInclude: ["企業や職種との接続", "数字や比較", "深掘りに耐える理由"],
+      followUpFocus: ["なぜそう考えたか", "本人の役割", "成果の根拠", "職種との接点"]
+    }
+  };
+
+  function getExpectedAnswerCategory(settings) {
+    var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
+    if (safeSettings.category === "development" || safeSettings.interviewType === "technical") {
+      return "technical";
+    }
+    if (safeSettings.category === "research" || safeSettings.interviewType === "research") {
+      return "research";
+    }
+    if (EXPECTED_ANSWER_CATEGORY_TEMPLATES[safeSettings.category]) {
+      return safeSettings.category;
+    }
+    return "default";
+  }
+
+  function getCategoryTemplate(category) {
+    return EXPECTED_ANSWER_CATEGORY_TEMPLATES[category] || EXPECTED_ANSWER_CATEGORY_TEMPLATES.default;
+  }
+
+  function createDefaultRubricLevels() {
+    return [
+      {
+        axis: "overall",
+        level: 1,
+        label: "不十分",
+        description: "質問意図にほぼ答えておらず、具体的な行動・根拠・学びが不足している。",
+        requiredEvidenceKeys: []
+      },
+      {
+        axis: "overall",
+        level: 2,
+        label: "弱い",
+        description: "主張はあるが、状況・本人の行動・成果のつながりが薄い。",
+        requiredEvidenceKeys: ["claim"]
+      },
+      {
+        axis: "overall",
+        level: 3,
+        label: "標準",
+        description: "状況、本人の行動、結果が説明され、質問意図に概ね対応している。",
+        requiredEvidenceKeys: ["context", "action", "result"]
+      },
+      {
+        axis: "overall",
+        level: 4,
+        label: "良い",
+        description: "行動の理由、工夫、困難への対処、再現できる学びがある。",
+        requiredEvidenceKeys: ["context", "action", "reasoning", "result", "learning"]
+      },
+      {
+        axis: "overall",
+        level: 5,
+        label: "非常に良い",
+        description: "職務・企業文脈に接続し、判断理由・具体性・深掘り耐性まで明確である。",
+        requiredEvidenceKeys: ["context", "action", "reasoning", "result", "learning", "job_relevance"]
+      }
+    ];
+  }
+
+  function createFairnessRisks() {
+    return [
+      "家族構成、出生地、住宅状況、生活環境、思想信条、宗教、支持政党など職務適性と関係ない情報は評価しない。",
+      "性別、年齢、国籍、健康状態、障害、婚姻、育児・介護、外見、声質、訛りで加点・減点しない。",
+      "学校名、所属ブランド、留学・長期インターン経験の有無だけで評価しない。回答中の行動と職務関連性を見る。"
+    ];
+  }
+
+  function createUnverifiedClaimRules() {
+    return [
+      "ES、企業メモ、会話履歴にない実績・数字・固有名詞は事実として断定しない。",
+      "回答者が新しく述べた事実は未確認の主張として扱い、採点根拠にする場合は説明の具体性に限定する。",
+      "未確認情報は矛盾扱いせず、必要なら深掘り質問で確認する。"
+    ];
+  }
+
+  function sanitizeRubricLevels(items, fallback) {
+    var source = Array.isArray(items) && items.length ? items : fallback || createDefaultRubricLevels();
+    return source.map(function (item) {
+      return {
+        axis: String(item && item.axis || "overall"),
+        level: Number.isFinite(Number(item && item.level)) ? Math.max(1, Math.min(5, Number(item.level))) : 3,
+        label: String(item && item.label || ""),
+        description: String(item && item.description || ""),
+        requiredEvidenceKeys: sanitizeStringArray(item && item.requiredEvidenceKeys, [])
+      };
+    }).filter(function (item) {
+      return item.description;
+    });
+  }
+
+  function normalizeScoreConfidence(value, fallback) {
+    var normalized = String(value || fallback || "medium").toLowerCase();
+    return ["high", "medium", "low"].indexOf(normalized) !== -1 ? normalized : "medium";
+  }
+
   function normalizeScoringRubric(rubric) {
     var fallback = {
       answerRelevance: 18,
@@ -1208,6 +1391,8 @@
   function createFallbackExpectedAnswerData(question, settings) {
     var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
     var sourceEntries = Array.isArray(safeSettings.sourceEsEntries) ? safeSettings.sourceEsEntries : [];
+    var questionCategory = getExpectedAnswerCategory(safeSettings);
+    var template = getCategoryTemplate(questionCategory);
     var referenceFacts = sourceEntries.map(function (entry, index) {
       var answer = String(entry.answerText || "").replace(/\s+/g, " ").slice(0, 140);
       return "ES" + (index + 1) + ": " + (entry.questionText || "設問未入力") + (answer ? " / " + answer : "");
@@ -1224,14 +1409,17 @@
     if (safeSettings.role) {
       mustInclude.push(safeSettings.role + "で活かせる要素");
     }
+    mustInclude = unique((template.mustInclude || []).concat(mustInclude));
     return {
+      questionCategory: questionCategory,
+      intentLabel: template.intentLabel || "general_interview_fit",
       questionIntent: "面接官が「" + question + "」で確認したい意図を、結論・根拠・再現性・企業適合の観点で満たすこと。",
       mustInclude: mustInclude,
-      shouldInclude: [
+      shouldInclude: unique((template.shouldInclude || []).concat([
         "背景、課題、行動、結果、学びの流れ",
         "数字、期間、人数、役割などの具体情報",
         "入社後または参加後にどう活かすか"
-      ],
+      ])),
       goodSignals: [
         "ESに書いた経験を使いながら、面接用に補足説明できている",
         "本人の役割と意思決定が明確",
@@ -1243,9 +1431,14 @@
         "結論が遅く、質問への答えが曖昧",
         "成果や学びが抽象的"
       ],
+      evidenceFields: template.evidenceFields || getCategoryTemplate("default").evidenceFields,
+      rubricLevels: createDefaultRubricLevels(),
+      fairnessRisks: createFairnessRisks(),
+      unverifiedClaims: createUnverifiedClaimRules(),
+      scoreConfidence: sourceEntries.length ? "medium" : "low",
       referenceFactsFromES: referenceFacts,
       suggestedStructure: ["結論", "背景", "自分の役割", "行動", "結果", "学び", "応募先での活かし方"],
-      followUpFocus: ["なぜその行動を取ったか", "成果の根拠", "再現性", "応募企業・職種との接点"],
+      followUpFocus: unique((template.followUpFocus || []).concat(["なぜその行動を取ったか", "成果の根拠", "再現性", "応募企業・職種との接点"])),
       scoringRubric: normalizeScoringRubric(null),
       generatedBy: "mock",
       generatedAt: new Date().toISOString()
@@ -1255,11 +1448,18 @@
   function normalizeExpectedAnswerData(data, fallback) {
     var base = fallback || createFallbackExpectedAnswerData("", {});
     return {
+      questionCategory: String(data && data.questionCategory || base.questionCategory || "default"),
+      intentLabel: String(data && data.intentLabel || base.intentLabel || "general_interview_fit"),
       questionIntent: String(data && data.questionIntent || base.questionIntent || ""),
       mustInclude: sanitizeStringArray(data && data.mustInclude, base.mustInclude),
       shouldInclude: sanitizeStringArray(data && data.shouldInclude, base.shouldInclude),
       goodSignals: sanitizeStringArray(data && data.goodSignals, base.goodSignals),
       riskSignals: sanitizeStringArray(data && data.riskSignals, base.riskSignals),
+      evidenceFields: sanitizeStringArray(data && data.evidenceFields, base.evidenceFields),
+      rubricLevels: sanitizeRubricLevels(data && data.rubricLevels, base.rubricLevels),
+      fairnessRisks: sanitizeStringArray(data && data.fairnessRisks, base.fairnessRisks || createFairnessRisks()),
+      unverifiedClaims: sanitizeStringArray(data && data.unverifiedClaims, base.unverifiedClaims || createUnverifiedClaimRules()),
+      scoreConfidence: normalizeScoreConfidence(data && data.scoreConfidence, base.scoreConfidence),
       referenceFactsFromES: sanitizeStringArray(data && data.referenceFactsFromES, base.referenceFactsFromES),
       suggestedStructure: sanitizeStringArray(data && data.suggestedStructure, base.suggestedStructure),
       followUpFocus: sanitizeStringArray(data && data.followUpFocus, base.followUpFocus),
@@ -1294,6 +1494,11 @@
           "重要: 模範回答文は作らないでください。ユーザーの自由な表現を許容し、回答に含まれるべき条件、良い兆候、リスク、深掘り観点だけを作ってください。",
           "ESにない事実を作らず、企業情報、職種、応募区分、全ESとの一貫性を重視してください。",
           "文章の流暢さだけで高評価にしない採点基準にしてください。",
+          "必ず questionCategory, intentLabel, evidenceFields, rubricLevels, fairnessRisks, unverifiedClaims, scoreConfidence を含めてください。",
+          "rubricLevels は 1-5 の段階基準にし、各段階で必要な証拠項目を requiredEvidenceKeys に入れてください。",
+          "fairnessRisks には、年齢、性別、国籍、健康状態、家族、出生地、思想信条、外見、声質など、職務適性と関係ない評価禁止事項を入れてください。",
+          "unverifiedClaims には、ES・企業メモ・会話履歴にない実績、数字、固有名詞を事実として断定しないための扱いを書いてください。",
+          "scoreConfidence は high / medium / low のいずれかで、ESや企業メモが少ない場合は低めにしてください。",
           buildAiContext(settings),
           "現在の質問: " + question,
           "これまでの会話履歴:",
@@ -1478,6 +1683,16 @@
     var improvements = [];
     var issues = [];
     var missingElements = [];
+    var hasSourceEvidence = Array.isArray(safeSettings.sourceEsEntries) && safeSettings.sourceEsEntries.length;
+    var unverifiedClaims = [];
+    var fairnessFlags = [];
+
+    if (/\d|%|倍|全国|優勝|受賞|売上|利益|精度|改善率/.test(safeAnswer) && !hasSourceEvidence) {
+      unverifiedClaims.push("回答内に実績・数字・固有名詞の可能性がありますが、ESや企業メモでは確認できません。");
+    }
+    if (/家族|父|母|親|兄弟|姉妹|本籍|出生地|出身地|宗教|政党|思想|信条|健康|障害|病気|妊娠|結婚|国籍|年齢|性別|容姿|声質/.test(safeAnswer)) {
+      fairnessFlags.push("職務適性と直接関係しない個人属性の可能性があります。加点・減点の根拠にはしません。");
+    }
 
     if (axes["結論の明確さ"] >= 7) {
       goodPoints.push("回答の主張が早い段階で示されています。");
@@ -1512,6 +1727,9 @@
       improvements: improvements,
       issues: issues,
       missingElements: missingElements,
+      unverifiedClaims: unverifiedClaims,
+      fairnessFlags: fairnessFlags,
+      scoreConfidence: safeAnswer.length < 50 || unverifiedClaims.length ? "low" : hasSourceEvidence ? "medium" : "low",
       esConsistency: {
         status: safeSettings.sourceEsEntries && safeSettings.sourceEsEntries.length ? "unchecked_by_mock" : "insufficient_evidence",
         notes: "モック採点ではESとの厳密な矛盾検出は行わず、回答内の企業名・職種名・具体性を中心に見ています。"
@@ -1543,6 +1761,10 @@
           "質問に直接答えているか、ES全体と矛盾していないか、ESの単なる言い換えでなく背景・本人の行動・判断理由・成果・学び・再現性が補足されているかを評価してください。",
           "文章が流暢・丁寧という理由だけで点数を上げないでください。",
           "ESにない事実、数値、役割は補完せず、未確認情報または深掘り対象として扱ってください。",
+          "rubricLevelsを使い、回答内の根拠がどの段階を満たすかを見てください。mustIncludeの単純一致だけで採点しないでください。",
+          "年齢、性別、国籍、健康状態、家族、出生地、思想信条、外見、声質など、職務適性と関係ない属性は加点・減点の根拠にしないでください。該当する場合はfairnessFlagsに入れてください。",
+          "ES・企業メモ・会話履歴で確認できない実績、数字、固有名詞はunverifiedClaimsに入れ、必要なら深掘り質問で確認してください。",
+          "scoreConfidenceはhigh / medium / lowのいずれかで返してください。根拠不足、回答短すぎ、未確認情報が多い場合はlowにしてください。",
           "改善点は実際に次の回答で直せる粒度にしてください。",
           buildAiContext(settings),
           "expectedAnswerData:",
@@ -1561,6 +1783,9 @@
         improvements: sanitizeStringArray(result.improvements, fallback.improvements),
         issues: sanitizeStringArray(result.issues, fallback.issues),
         missingElements: sanitizeStringArray(result.missingElements, fallback.missingElements),
+        unverifiedClaims: sanitizeStringArray(result.unverifiedClaims, fallback.unverifiedClaims),
+        fairnessFlags: sanitizeStringArray(result.fairnessFlags, fallback.fairnessFlags),
+        scoreConfidence: normalizeScoreConfidence(result.scoreConfidence, fallback.scoreConfidence),
         esConsistency: result.esConsistency || fallback.esConsistency,
         scoringRationale: result.scoringRationale || fallback.scoringRationale,
         expectedAnswerData: expected,
@@ -2178,22 +2403,58 @@
     parent.appendChild(list);
   }
 
+  function appendRubricLevels(parent, rubricLevels) {
+    var safeLevels = sanitizeRubricLevels(rubricLevels, []);
+    if (!safeLevels.length) {
+      return;
+    }
+    var items = safeLevels.map(function (level) {
+      var keys = level.requiredEvidenceKeys && level.requiredEvidenceKeys.length
+        ? " / 根拠: " + level.requiredEvidenceKeys.join(", ")
+        : "";
+      return "Lv" + level.level + " " + level.label + ": " + level.description + keys;
+    });
+    appendCompactList(parent, "5段階ルーブリック", items);
+  }
+
   function appendExpectedAnswerData(parent, expectedAnswerData, evaluation) {
     if (!expectedAnswerData) {
       return;
     }
+    var normalized = normalizeExpectedAnswerData(expectedAnswerData, expectedAnswerData);
     var section = document.createElement("div");
+    var meta = document.createElement("p");
     var intent = document.createElement("p");
+    var notice = document.createElement("p");
     section.className = "expected-answer-block";
-    intent.textContent = "評価基準: " + (expectedAnswerData.questionIntent || "なし");
+    meta.textContent = "評価分類: " + (normalized.questionCategory || "default") + " / " + (normalized.intentLabel || "general_interview_fit") + " / 信頼度: " + (normalized.scoreConfidence || "medium");
+    intent.textContent = "評価基準: " + (normalized.questionIntent || "なし");
+    notice.textContent = "注意: 未確認の事実や職務適性と関係ない個人属性は、採点根拠にしません。";
+    section.appendChild(meta);
     section.appendChild(intent);
-    appendCompactList(section, "必ず見る条件", expectedAnswerData.mustInclude);
-    appendCompactList(section, "加点要素", expectedAnswerData.shouldInclude);
-    appendCompactList(section, "ESから参照した事実", expectedAnswerData.referenceFactsFromES);
-    appendCompactList(section, "リスク", expectedAnswerData.riskSignals);
-    appendCompactList(section, "深掘り観点", expectedAnswerData.followUpFocus);
+    section.appendChild(notice);
+    appendCompactList(section, "必ず見る条件", normalized.mustInclude);
+    appendCompactList(section, "加点要素", normalized.shouldInclude);
+    appendCompactList(section, "確認する根拠項目", normalized.evidenceFields);
+    appendRubricLevels(section, normalized.rubricLevels);
+    appendCompactList(section, "ESから参照した事実", normalized.referenceFactsFromES);
+    appendCompactList(section, "リスク", normalized.riskSignals);
+    appendCompactList(section, "未確認事実の扱い", normalized.unverifiedClaims);
+    appendCompactList(section, "評価禁止・注意事項", normalized.fairnessRisks);
+    appendCompactList(section, "深掘り観点", normalized.followUpFocus);
     if (evaluation && evaluation.missingElements && evaluation.missingElements.length) {
       appendCompactList(section, "今回不足していた要素", evaluation.missingElements);
+    }
+    if (evaluation && evaluation.unverifiedClaims && evaluation.unverifiedClaims.length) {
+      appendCompactList(section, "今回の未確認情報", evaluation.unverifiedClaims);
+    }
+    if (evaluation && evaluation.fairnessFlags && evaluation.fairnessFlags.length) {
+      appendCompactList(section, "公平性チェック", evaluation.fairnessFlags);
+    }
+    if (evaluation && evaluation.scoreConfidence) {
+      var confidence = document.createElement("p");
+      confidence.textContent = "今回の採点信頼度: " + evaluation.scoreConfidence;
+      section.appendChild(confidence);
     }
     if (evaluation && evaluation.esConsistency) {
       var consistency = document.createElement("p");
