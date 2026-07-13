@@ -9,6 +9,7 @@
   var AI_SETTINGS_KEY = "aiInterviewPrototype.openAiSettings";
   var AI_SESSION_KEY = "aiInterviewPrototype.openAiSessionKey";
   var QUESTION_SPEECH_SETTINGS_KEY = "aiInterviewPrototype.questionSpeechSettings";
+  var RANDOM_INTERVIEWER_TYPE_ID = "random";
 
   var DEFAULT_SETTINGS = {
     company: "",
@@ -17,6 +18,8 @@
     targetType: "new-graduate",
     category: "self_pr",
     interviewerType: "friendly",
+    interviewerTypeMode: "fixed",
+    interviewerTypeSelection: "friendly",
     questionCount: 5,
     userProfile: ""
   };
@@ -146,6 +149,12 @@
     }
   ];
 
+  var RANDOM_INTERVIEWER_OPTION = {
+    id: RANDOM_INTERVIEWER_TYPE_ID,
+    label: "ランダム",
+    description: "開始時にAI面接官タイプをランダムに決定します。どのタイプになるかは開始後に表示されます。"
+  };
+
   var questionBank = {
     self_pr: [
       "あなたの強みを、応募先でどのように活かせるかを含めて教えてください。",
@@ -210,6 +219,7 @@
     selectedCompanyId: null,
     pendingSourceCompanyId: null,
     currentExpectedAnswerData: null,
+    currentQuestionTopic: null,
     audioClips: {},
     isBusy: false
   };
@@ -334,6 +344,37 @@
     }) || INTERVIEWER_TYPES[0];
   }
 
+  function isRandomInterviewerType(value) {
+    return value === RANDOM_INTERVIEWER_TYPE_ID;
+  }
+
+  function getSelectableInterviewerOptions() {
+    return [RANDOM_INTERVIEWER_OPTION].concat(INTERVIEWER_TYPES);
+  }
+
+  function pickRandomInterviewerType() {
+    return INTERVIEWER_TYPES[Math.floor(Math.random() * INTERVIEWER_TYPES.length)] || INTERVIEWER_TYPES[0];
+  }
+
+  function resolveInterviewerSettings(settings) {
+    var result = Object.assign({}, settings || {});
+    var selected = result.interviewerType || DEFAULT_SETTINGS.interviewerType;
+    if (isRandomInterviewerType(selected)) {
+      var picked = pickRandomInterviewerType();
+      result.interviewerTypeMode = "random";
+      result.interviewerTypeSelection = RANDOM_INTERVIEWER_TYPE_ID;
+      result.requestedInterviewerType = RANDOM_INTERVIEWER_TYPE_ID;
+      result.interviewerType = picked.id;
+      return result;
+    }
+    var type = getInterviewerType(selected);
+    result.interviewerTypeMode = "fixed";
+    result.interviewerTypeSelection = type.id;
+    result.requestedInterviewerType = type.id;
+    result.interviewerType = type.id;
+    return result;
+  }
+
   function formatInterviewerType(value) {
     var type = getInterviewerType(value);
     return type.label + " / " + type.description;
@@ -352,19 +393,28 @@
       return;
     }
     grid.textContent = "";
-    INTERVIEWER_TYPES.forEach(function (type) {
+    getSelectableInterviewerOptions().forEach(function (type) {
       var button = document.createElement("button");
-      var image = document.createElement("img");
       button.type = "button";
       button.className = "interviewer-avatar-option" + (type.id === currentValue ? " is-selected" : "");
       button.dataset.interviewerType = type.id;
       button.dataset.action = "select-interviewer-type";
       button.setAttribute("role", "radio");
       button.setAttribute("aria-checked", type.id === currentValue ? "true" : "false");
-      button.setAttribute("aria-label", type.label);
-      image.src = type.image;
-      image.alt = "";
-      button.appendChild(image);
+      button.setAttribute("aria-label", isRandomInterviewerType(type.id) ? "ランダム。開始時に面接官タイプを決定" : type.label);
+      button.tabIndex = type.id === currentValue ? 0 : -1;
+      if (isRandomInterviewerType(type.id)) {
+        var randomMark = document.createElement("span");
+        randomMark.className = "interviewer-random-mark";
+        randomMark.textContent = "?";
+        button.className += " is-random";
+        button.appendChild(randomMark);
+      } else {
+        var image = document.createElement("img");
+        image.src = type.image;
+        image.alt = "";
+        button.appendChild(image);
+      }
       grid.appendChild(button);
     });
   }
@@ -373,13 +423,19 @@
     var avatar = $("currentInterviewerAvatar");
     var persona = $("currentInterviewerPersona");
     var setupDescription = $("interviewerPersonaDescription");
+    if (isRandomInterviewerType(value)) {
+      if (setupDescription) {
+        setupDescription.textContent = "質問の思考: " + RANDOM_INTERVIEWER_OPTION.description;
+      }
+      return;
+    }
     var type = getInterviewerType(value || DEFAULT_SETTINGS.interviewerType);
     if (avatar) {
       avatar.src = type.image;
       avatar.alt = "";
     }
     if (persona) {
-      persona.textContent = type.description;
+      persona.textContent = "今回の面接官: " + type.label + " / " + type.description;
     }
     if (setupDescription) {
       setupDescription.textContent = "質問の思考: " + type.description;
@@ -387,6 +443,12 @@
   }
 
   function selectInterviewerType(value) {
+    if (isRandomInterviewerType(value)) {
+      setValue("interviewerTypeSelect", RANDOM_INTERVIEWER_TYPE_ID);
+      updateCurrentInterviewerAvatar(RANDOM_INTERVIEWER_TYPE_ID);
+      renderInterviewerAvatarGrid();
+      return;
+    }
     var type = getInterviewerType(value);
     setValue("interviewerTypeSelect", type.id);
     updateCurrentInterviewerAvatar(type.id);
@@ -1117,12 +1179,21 @@
     });
   }
 
+  function topicResultSchema() {
+    return jsonSchema({
+      topicId: { type: "string" },
+      status: { type: "string" },
+      reason: { type: "string" }
+    });
+  }
+
   var schemas = {
     connection_test: jsonSchema({
       message: { type: "string" }
     }),
     interview_question: jsonSchema({
-      question: { type: "string" }
+      question: { type: "string" },
+      topicId: { type: "string" }
     }),
     expected_answer_data: expectedAnswerDataSchema(),
     answer_evaluation: jsonSchema({
@@ -1139,6 +1210,10 @@
       esConsistency: esConsistencySchema(),
       scoringRationale: { type: "string" },
       deepDiveQuestion: { type: "string" },
+      shouldAskDeepDive: { type: "boolean" },
+      followUpReason: { type: "string" },
+      followUpTarget: { type: "string" },
+      topicResult: topicResultSchema(),
       direction: { type: "string" },
       revisedAnswerExample: { type: "string" },
       nextQuestion: { type: "string" }
@@ -1190,7 +1265,7 @@
       "面接タイプ: " + formatInterviewTypeLabel(safeSettings.interviewType),
       "対象区分: " + (safeSettings.targetType || "未設定"),
       "カテゴリ: " + formatCategoryLabel(safeSettings.category),
-      "面接官タイプ: " + formatInterviewerType(safeSettings.interviewerType),
+      "面接官タイプ: " + formatInterviewerType(safeSettings.interviewerType) + (safeSettings.interviewerTypeMode === "random" ? "（ランダム選択で決定）" : ""),
       "自己メモ: " + (safeSettings.userProfile || "未入力"),
       sourceEntries.length ? "保存済みES一覧:\n" + sourceEntries.map(function (entry, index) {
         return [
@@ -1476,11 +1551,311 @@
           questionNumber: entry.questionNumber,
           question: entry.question,
           answer: entry.answer,
+          topic: entry.topic || null,
           score: entry.evaluation ? entry.evaluation.score : null,
-          summary: entry.evaluation ? entry.evaluation.summary : ""
+          summary: entry.evaluation ? entry.evaluation.summary : "",
+          missingElements: entry.evaluation ? entry.evaluation.missingElements : [],
+          unverifiedClaims: entry.evaluation ? entry.evaluation.unverifiedClaims : [],
+          followUpReason: entry.evaluation ? entry.evaluation.followUpReason : ""
         };
       })
       : [];
+  }
+
+  function normalizeQuestionForCompare(question) {
+    return String(question || "")
+      .toLowerCase()
+      .replace(/[、。,.!?！？\s]/g, "")
+      .replace(/応募先の.+?との接点も含めてください/g, "")
+      .replace(/.+?で再現できる力が伝わるように答えてください/g, "")
+      .replace(/根拠が弱い場合は追加で確認します/g, "");
+  }
+
+  function getAskedQuestions() {
+    return appState.interviewLog && Array.isArray(appState.interviewLog.entries)
+      ? appState.interviewLog.entries.map(function (entry) {
+        return entry.question;
+      }).filter(Boolean)
+      : [];
+  }
+
+  function isSimilarQuestion(candidate, existingQuestion) {
+    var a = normalizeQuestionForCompare(candidate);
+    var b = normalizeQuestionForCompare(existingQuestion);
+    if (!a || !b) {
+      return false;
+    }
+    if (a === b || a.indexOf(b) !== -1 || b.indexOf(a) !== -1) {
+      return true;
+    }
+    var shorter = a.length < b.length ? a : b;
+    var longer = a.length < b.length ? b : a;
+    if (shorter.length < 16) {
+      return false;
+    }
+    var shared = 0;
+    for (var index = 0; index < shorter.length - 1; index += 1) {
+      if (longer.indexOf(shorter.slice(index, index + 2)) !== -1) {
+        shared += 1;
+      }
+    }
+    return shared / Math.max(1, shorter.length - 1) > 0.72;
+  }
+
+  function wasQuestionAsked(candidate) {
+    return getAskedQuestions().some(function (question) {
+      return isSimilarQuestion(candidate, question);
+    });
+  }
+
+  function getInterviewProgressSummary() {
+    var turns = getPreviousTurns();
+    return {
+      askedQuestions: turns.map(function (turn) {
+        return turn.question;
+      }).filter(Boolean),
+      answeredSummaries: turns.map(function (turn) {
+        return {
+          questionNumber: turn.questionNumber,
+          question: turn.question,
+          answerExcerpt: String(turn.answer || "").replace(/\s+/g, " ").slice(0, 180),
+          score: turn.score,
+          evaluationSummary: turn.summary || "",
+          missingElements: turn.missingElements || [],
+          unverifiedClaims: turn.unverifiedClaims || [],
+          followUpReason: turn.followUpReason || ""
+        };
+      })
+    };
+  }
+
+  function createCoverageTopic(id, label, category, focus) {
+    return {
+      id: id,
+      label: label,
+      category: normalizeCategory(category || "default"),
+      focus: focus || label
+    };
+  }
+
+  function addCoverageTopic(topics, topic) {
+    if (!topic || !topic.id || topics.some(function (item) {
+      return item.id === topic.id;
+    })) {
+      return;
+    }
+    topics.push(topic);
+  }
+
+  function createCategoryTopic(category, focus) {
+    var normalized = normalizeCategory(category || "default");
+    return createCoverageTopic(
+      "category_" + normalized,
+      CATEGORY_LABELS[normalized] || CATEGORY_LABELS.default,
+      normalized,
+      focus || ((CATEGORY_LABELS[normalized] || CATEGORY_LABELS.default) + "の具体性と再現性")
+    );
+  }
+
+  function initializeTopicCoverage(settings) {
+    var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
+    var topics = [];
+    addCoverageTopic(topics, createCategoryTopic(safeSettings.category, "設定カテゴリの主要論点"));
+    (safeSettings.sourceEsEntries || []).forEach(function (entry) {
+      addCoverageTopic(topics, createCategoryTopic(entry.category, "保存済みESに書かれた経験の深掘り"));
+    });
+    if (safeSettings.company || safeSettings.companyNotes) {
+      addCoverageTopic(topics, createCoverageTopic("company_fit", "企業理解", "motivation", "応募先の事業・特徴と自分の経験の接点"));
+    }
+    if (safeSettings.role) {
+      addCoverageTopic(topics, createCoverageTopic("role_fit", "職種理解", "career", safeSettings.role + "で再現できる力"));
+    }
+    if (safeSettings.interviewType === "technical") {
+      addCoverageTopic(topics, createCoverageTopic("technical_decision", "技術判断", "development", "技術選定、設計判断、検証方法"));
+    }
+    if (safeSettings.interviewType === "research") {
+      addCoverageTopic(topics, createCoverageTopic("research_logic", "研究の論理", "research", "研究目的、手法、検証、独自性"));
+    }
+    if (safeSettings.interviewType === "final") {
+      addCoverageTopic(topics, createCoverageTopic("career_alignment", "キャリア整合", "career", "将来像と応募先で実現したいこと"));
+    }
+    addCoverageTopic(topics, createCoverageTopic("evidence_result", "成果の根拠", safeSettings.category, "成果、規模、数字、比較の確認"));
+    addCoverageTopic(topics, createCoverageTopic("reflection_learning", "学びと改善", "failure", "失敗、改善、次に変える行動"));
+    addCoverageTopic(topics, createCoverageTopic("team_role", "チーム内の役割", "team", "周囲との関わり、合意形成、本人の貢献"));
+    return {
+      candidateTopics: topics,
+      askedTopics: [],
+      answeredTopics: [],
+      weakTopics: [],
+      currentTopic: null
+    };
+  }
+
+  function getTopicCoverage() {
+    if (!appState.interviewLog) {
+      return initializeTopicCoverage(appState.settings);
+    }
+    if (!appState.interviewLog.topicCoverage) {
+      appState.interviewLog.topicCoverage = initializeTopicCoverage(appState.settings);
+    }
+    return appState.interviewLog.topicCoverage;
+  }
+
+  function findCoverageTopic(topicId) {
+    var coverage = getTopicCoverage();
+    return (coverage.candidateTopics || []).find(function (topic) {
+      return topic.id === topicId;
+    }) || null;
+  }
+
+  function topicSummary(topic) {
+    if (!topic) {
+      return null;
+    }
+    return {
+      id: topic.id,
+      label: topic.label,
+      category: topic.category,
+      focus: topic.focus
+    };
+  }
+
+  function expandTopicIds(ids) {
+    return sanitizeStringArray(ids, []).map(function (topicId) {
+      return topicSummary(findCoverageTopic(topicId)) || { id: topicId, label: topicId };
+    });
+  }
+
+  function buildTopicCoverageContext() {
+    var coverage = getTopicCoverage();
+    return {
+      candidateTopics: (coverage.candidateTopics || []).map(topicSummary).filter(Boolean),
+      askedTopics: expandTopicIds(coverage.askedTopics),
+      answeredTopics: expandTopicIds(coverage.answeredTopics),
+      weakTopics: expandTopicIds(coverage.weakTopics),
+      currentTopic: topicSummary(coverage.currentTopic || appState.currentQuestionTopic)
+    };
+  }
+
+  function pushUniqueId(items, id) {
+    if (id && items.indexOf(id) === -1) {
+      items.push(id);
+    }
+  }
+
+  function removeId(items, id) {
+    return (items || []).filter(function (item) {
+      return item !== id;
+    });
+  }
+
+  function selectFallbackTopic(settings, options) {
+    var coverage = getTopicCoverage();
+    var opts = options || {};
+    var candidates = coverage.candidateTopics && coverage.candidateTopics.length
+      ? coverage.candidateTopics
+      : initializeTopicCoverage(settings).candidateTopics;
+    var answered = sanitizeStringArray(coverage.answeredTopics, []);
+    var asked = sanitizeStringArray(coverage.askedTopics, []);
+    var weak = sanitizeStringArray(coverage.weakTopics, []);
+    var weakCandidate = opts.preferWeak ? weak.map(findCoverageTopic).find(Boolean) : null;
+    if (weakCandidate) {
+      return weakCandidate;
+    }
+    var fresh = candidates.find(function (topic) {
+      return answered.indexOf(topic.id) === -1 && asked.indexOf(topic.id) === -1;
+    });
+    if (fresh) {
+      return fresh;
+    }
+    var unanswered = candidates.find(function (topic) {
+      return answered.indexOf(topic.id) === -1;
+    });
+    if (unanswered) {
+      return unanswered;
+    }
+    var fallbackWeak = weak.map(findCoverageTopic).find(Boolean);
+    if (fallbackWeak) {
+      return fallbackWeak;
+    }
+    var offset = appState.interviewLog && appState.interviewLog.entries ? appState.interviewLog.entries.length : 0;
+    return candidates[offset % Math.max(1, candidates.length)] || createCategoryTopic((settings || DEFAULT_SETTINGS).category);
+  }
+
+  function applyQuestionTopic(question, topic) {
+    var coverage = getTopicCoverage();
+    var selected = topic && topic.id ? topic : selectFallbackTopic(appState.settings);
+    coverage.currentTopic = selected;
+    appState.currentQuestionTopic = selected;
+    pushUniqueId(coverage.askedTopics, selected.id);
+    return selected;
+  }
+
+  function normalizeTopicResult(result, topic, evaluation) {
+    var selected = topic && topic.id ? topic : appState.currentQuestionTopic;
+    var status = String(result && result.status || "").toLowerCase();
+    var score = Number(evaluation && evaluation.score);
+    var hasMissing = sanitizeStringArray(evaluation && evaluation.missingElements, []).length > 0;
+    var hasUnverified = sanitizeStringArray(evaluation && evaluation.unverifiedClaims, []).length > 0;
+    if (["answered", "weak", "unrelated"].indexOf(status) === -1) {
+      status = hasMissing || hasUnverified || normalizeScoreConfidence(evaluation && evaluation.scoreConfidence, "medium") === "low" || (Number.isFinite(score) && score < 72)
+        ? "weak"
+        : "answered";
+    }
+    return {
+      topicId: String(result && result.topicId || selected && selected.id || ""),
+      status: status,
+      reason: String(result && result.reason || makeFollowUpReason(evaluation) || "")
+    };
+  }
+
+  function updateTopicCoverageFromEvaluation(evaluation, topic) {
+    var coverage = getTopicCoverage();
+    var selected = topic && topic.id ? topic : appState.currentQuestionTopic;
+    if (!selected || !selected.id) {
+      return normalizeTopicResult(evaluation && evaluation.topicResult, selected, evaluation);
+    }
+    var result = normalizeTopicResult(evaluation && evaluation.topicResult, selected, evaluation);
+    result.topicId = result.topicId || selected.id;
+    if (result.status === "answered") {
+      pushUniqueId(coverage.answeredTopics, selected.id);
+      coverage.weakTopics = removeId(coverage.weakTopics, selected.id);
+    } else if (result.status === "weak") {
+      pushUniqueId(coverage.weakTopics, selected.id);
+      coverage.answeredTopics = removeId(coverage.answeredTopics, selected.id);
+    }
+    coverage.currentTopic = selected;
+    return result;
+  }
+
+  function makeFollowUpReason(evaluation) {
+    var missing = sanitizeStringArray(evaluation && evaluation.missingElements, []);
+    var unverified = sanitizeStringArray(evaluation && evaluation.unverifiedClaims, []);
+    if (missing.length) {
+      return "前の回答で「" + missing.slice(0, 2).join("、") + "」がまだ確認できないため、そこだけ追加で確認します。";
+    }
+    if (unverified.length) {
+      return "前の回答に未確認の実績や数字があるため、根拠を確認します。";
+    }
+    return "";
+  }
+
+  function shouldUseDeepDive(evaluation) {
+    if (!evaluation || !evaluation.deepDiveQuestion || wasQuestionAsked(evaluation.deepDiveQuestion)) {
+      return false;
+    }
+    if (evaluation.shouldAskDeepDive === true) {
+      return true;
+    }
+    if (evaluation.shouldAskDeepDive === false) {
+      return false;
+    }
+    var score = Number(evaluation.score);
+    var confidence = normalizeScoreConfidence(evaluation.scoreConfidence, "medium");
+    return confidence === "low"
+      || (Number.isFinite(score) && score < 72)
+      || sanitizeStringArray(evaluation.missingElements, []).length > 0
+      || sanitizeStringArray(evaluation.unverifiedClaims, []).length > 0;
   }
 
   async function getExpectedAnswerData(question, settings) {
@@ -1500,6 +1875,10 @@
           "unverifiedClaims には、ES・企業メモ・会話履歴にない実績、数字、固有名詞を事実として断定しないための扱いを書いてください。",
           "scoreConfidence は high / medium / low のいずれかで、ESや企業メモが少ない場合は低めにしてください。",
           buildAiContext(settings),
+          "topicCoverage:",
+          JSON.stringify(buildTopicCoverageContext()),
+          "currentTopic:",
+          JSON.stringify(topicSummary(appState.currentQuestionTopic)),
           "現在の質問: " + question,
           "これまでの会話履歴:",
           JSON.stringify(getPreviousTurns())
@@ -1557,9 +1936,10 @@
     return parts.join(" ");
   }
 
-  function generateQuestion(settings) {
+  function generateQuestion(settings, topic) {
     var safeSettings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
-    var category = normalizeCategory(safeSettings.category || "default");
+    var selectedTopic = topic && topic.id ? topic : selectFallbackTopic(safeSettings);
+    var category = normalizeCategory(selectedTopic.category || safeSettings.category || "default");
     var pool = questionBank[category] || questionBank.default;
     var askedCount = Number.isFinite(safeSettings._askedCount)
       ? safeSettings._askedCount
@@ -1573,30 +1953,56 @@
       safeSettings.company,
       safeSettings.role,
       safeSettings.interviewType,
-      safeSettings.category,
+      category,
+      selectedTopic.id,
       safeSettings.interviewerType,
       askedCount
     ].join("|"));
-    return makeQuestionSpecific(pickFrom(pool, seed + askedCount), safeSettings);
+    var orderedPool = pool.map(function (question, index) {
+      return pool[(Math.abs(seed) + askedCount + index) % pool.length];
+    });
+    var selected = orderedPool.find(function (question) {
+      return !wasQuestionAsked(makeQuestionSpecific(question, safeSettings));
+    }) || pickFrom(pool, seed + askedCount);
+    return makeQuestionSpecific(selected, safeSettings);
   }
 
   async function getInterviewQuestion(settings) {
+    var topic = selectFallbackTopic(settings);
     try {
       var result = await callOpenAi(
         "interview_question",
         [
           "次に面接官が聞く質問を1つだけ作ってください。",
           "質問は日本語で、回答者が具体的に答えやすい聞き方にしてください。",
-          "既に聞いた質問と重複しないようにしてください。",
+          "既に聞いた質問と同じ内容・同じ確認観点を繰り返さないでください。",
+          "既に回答済みの内容は前提として扱い、ESから読めるだけの内容を再質問しないでください。",
+          "過去回答で未確認または不足している要素がある場合だけ、その不足点に絞った質問にしてください。",
+          "不足がなければ、過去質問とは別の評価観点に進んでください。",
+          "必ず指定されたselectedTopicに沿って質問を作り、topicIdにはselectedTopic.idを返してください。",
           buildAiContext(settings),
-          "これまでの質問数: " + (appState.interviewLog && appState.interviewLog.entries ? appState.interviewLog.entries.length : 0)
+          "topicCoverage:",
+          JSON.stringify(buildTopicCoverageContext()),
+          "selectedTopic:",
+          JSON.stringify(topicSummary(topic)),
+          "これまでの質問数: " + (appState.interviewLog && appState.interviewLog.entries ? appState.interviewLog.entries.length : 0),
+          "これまでの質問・回答・不足点:",
+          JSON.stringify(getInterviewProgressSummary())
         ].join("\n"),
         schemas.interview_question
       );
-      return result.question || generateQuestion(settings);
+      if (result.question) {
+        applyQuestionTopic(result.question, findCoverageTopic(result.topicId) || topic);
+        return result.question;
+      }
+      var generated = generateQuestion(settings, topic);
+      applyQuestionTopic(generated, topic);
+      return generated;
     } catch (error) {
       console.warn("AI question generation failed. Falling back to mock.", error);
-      return generateQuestion(settings);
+      var fallbackQuestion = generateQuestion(settings, topic);
+      applyQuestionTopic(fallbackQuestion, topic);
+      return fallbackQuestion;
     }
   }
 
@@ -1647,19 +2053,81 @@
 
   function generateFollowUpQuestion(answer, settings) {
     var safeAnswer = String(answer || "");
+    var candidate = "";
     if (safeAnswer.length < 50) {
-      return "もう少し具体的に、状況、あなたの行動、結果の順で説明できますか。";
+      candidate = "もう少し具体的に、状況、あなたの行動、結果の順で説明できますか。";
+      return wasQuestionAsked(candidate) ? "" : candidate;
     }
     if (!/(\d|年|月|人|%|件)/.test(safeAnswer)) {
-      return "成果や規模を、数字や比較で説明するとどうなりますか。";
+      candidate = "成果や規模を、数字や比較で説明するとどうなりますか。";
+      return wasQuestionAsked(candidate) ? "" : candidate;
     }
     if (settings.company && safeAnswer.indexOf(settings.company) === -1) {
-      return settings.company + "で働く前提では、その経験をどのように活かせますか。";
+      candidate = settings.company + "で働く前提では、その経験をどのように活かせますか。";
+      return wasQuestionAsked(candidate) ? "" : candidate;
     }
     if (settings.role && safeAnswer.indexOf(settings.role) === -1) {
-      return settings.role + "の仕事に直接つながる学びは何ですか。";
+      candidate = settings.role + "の仕事に直接つながる学びは何ですか。";
+      return wasQuestionAsked(candidate) ? "" : candidate;
     }
-    return "同じ状況がもう一度起きたら、次は何を変えますか。";
+    candidate = "同じ状況がもう一度起きたら、次は何を変えますか。";
+    return wasQuestionAsked(candidate) ? "" : candidate;
+  }
+
+  function normalizeEvaluationFlow(evaluation, fallback) {
+    var base = fallback || {};
+    var result = Object.assign({}, base, evaluation || {});
+    result.followUpReason = String(result.followUpReason || makeFollowUpReason(result) || "");
+    result.followUpTarget = String(result.followUpTarget || sanitizeStringArray(result.missingElements, [])[0] || "");
+    result.shouldAskDeepDive = Boolean(result.shouldAskDeepDive);
+    result.topicResult = normalizeTopicResult(result.topicResult, appState.currentQuestionTopic, result);
+    if (!result.shouldAskDeepDive && makeFollowUpReason(result)) {
+      result.shouldAskDeepDive = shouldUseDeepDive(result);
+    }
+    if (result.deepDiveQuestion && wasQuestionAsked(result.deepDiveQuestion)) {
+      result.deepDiveQuestion = "";
+      result.shouldAskDeepDive = false;
+    }
+    if (result.nextQuestion && wasQuestionAsked(result.nextQuestion)) {
+      result.nextQuestion = "";
+    }
+    result.nextQuestion = result.nextQuestion || "";
+    return result;
+  }
+
+  async function chooseNextQuestion(evaluation, settings) {
+    var normalized = normalizeEvaluationFlow(evaluation, evaluation);
+    if (shouldUseDeepDive(normalized)) {
+      return {
+        question: normalized.deepDiveQuestion,
+        isDeepDive: true,
+        reason: normalized.followUpReason || makeFollowUpReason(normalized),
+        evaluation: normalized
+      };
+    }
+    var nextQuestion = normalized.nextQuestion;
+    var nextTopic = selectFallbackTopic(settings);
+    if (!nextQuestion || wasQuestionAsked(nextQuestion)) {
+      nextQuestion = await getInterviewQuestion(settings);
+    } else {
+      applyQuestionTopic(nextQuestion, nextTopic);
+    }
+    if (!nextQuestion || wasQuestionAsked(nextQuestion)) {
+      nextQuestion = generateQuestion(Object.assign({}, settings || {}, {
+        _askedCount: appState.interviewLog && appState.interviewLog.entries
+          ? appState.interviewLog.entries.length + 1
+          : 1
+      }), nextTopic);
+      applyQuestionTopic(nextQuestion, nextTopic);
+    }
+    return {
+      question: nextQuestion,
+      isDeepDive: false,
+      reason: "前の回答で主要な確認はできたため、別の観点に進みます。",
+      evaluation: Object.assign({}, normalized, {
+        nextQuestion: nextQuestion
+      })
+    };
   }
 
   function buildRevisedAnswerExample(question, answer, settings) {
@@ -1737,6 +2205,19 @@
       scoringRationale: "ローカルの簡易採点です。OpenAI設定が有効な場合は、期待回答データ、全ES、企業情報、会話履歴を使って採点します。",
       expectedAnswerData: expected,
       deepDiveQuestion: generateFollowUpQuestion(safeAnswer, safeSettings),
+      shouldAskDeepDive: safeAnswer.length < 50 || unverifiedClaims.length > 0 || score < 65,
+      followUpReason: missingElements.length
+        ? "前の回答で「" + missingElements.slice(0, 2).join("、") + "」がまだ確認できないため、そこだけ追加で確認します。"
+        : unverifiedClaims.length
+          ? "前の回答に未確認の実績や数字があるため、根拠を確認します。"
+          : "",
+      followUpTarget: missingElements[0] || unverifiedClaims[0] || "",
+      topicResult: normalizeTopicResult(null, appState.currentQuestionTopic, {
+        score: score,
+        missingElements: missingElements,
+        unverifiedClaims: unverifiedClaims,
+        scoreConfidence: safeAnswer.length < 50 || unverifiedClaims.length ? "low" : hasSourceEvidence ? "medium" : "low"
+      }),
       direction: "結論を先に置き、根拠となる経験を数字や役割で補強し、最後に応募先での再現性へつなげてください。",
       revisedAnswerExample: buildRevisedAnswerExample(question, safeAnswer, safeSettings),
       nextQuestion: generateQuestion(Object.assign({}, safeSettings, {
@@ -1766,7 +2247,19 @@
           "ES・企業メモ・会話履歴で確認できない実績、数字、固有名詞はunverifiedClaimsに入れ、必要なら深掘り質問で確認してください。",
           "scoreConfidenceはhigh / medium / lowのいずれかで返してください。根拠不足、回答短すぎ、未確認情報が多い場合はlowにしてください。",
           "改善点は実際に次の回答で直せる粒度にしてください。",
+          "次の質問を作る前に、これまでの会話履歴の question / answer / summary / missingElements / unverifiedClaims を確認してください。",
+          "既に回答済みの内容、同じ意図、同じ経験の要約を再度聞かないでください。",
+          "deepDiveQuestionを出してよいのは、現在の回答に明確な不足がある場合だけです。例: 質問に直接答えていない、本人の役割・行動・判断理由・結果・学び・再現性が不足、未確認の数字や役割がある、ESや過去回答と矛盾がある、回答が短すぎる・抽象的すぎる。",
+          "十分に答えられている場合は shouldAskDeepDive=false、deepDiveQuestion=\"\"、followUpReason=\"\"、followUpTarget=\"\" にし、nextQuestionには未出の別観点の質問を入れてください。",
+          "深掘りする場合は shouldAskDeepDive=true にし、followUpReasonにユーザーへ説明できる具体的な理由、followUpTargetに確認対象を入れてください。一度に確認する不足点は1つだけにしてください。",
+          "nextQuestionも既出質問と同じ内容・同じ確認観点にしないでください。",
+          "topicResultには、currentTopicが今回の回答で十分確認できたらstatus=answered、不足や未確認が残るならstatus=weak、質問と回答がずれていればstatus=unrelatedを入れてください。",
+          "nextQuestionはtopicCoverageの未回答テーマを優先してください。weakTopicsへ戻るのは深掘りが必要な場合だけです。",
           buildAiContext(settings),
+          "topicCoverage:",
+          JSON.stringify(buildTopicCoverageContext()),
+          "currentTopic:",
+          JSON.stringify(topicSummary(appState.currentQuestionTopic)),
           "expectedAnswerData:",
           JSON.stringify(expected),
           "これまでの会話履歴:",
@@ -1776,7 +2269,7 @@
         ].join("\n"),
         schemas.answer_evaluation
       );
-      return Object.assign({}, fallback, result, {
+      return normalizeEvaluationFlow(Object.assign({}, fallback, result, {
         score: Math.max(0, Math.min(100, Math.round(Number(result.score) || fallback.score))),
         axisScores: normalizeAxisScores(result.axisScores, fallback.axisScores),
         goodPoints: sanitizeStringArray(result.goodPoints, fallback.goodPoints),
@@ -1789,12 +2282,16 @@
         esConsistency: result.esConsistency || fallback.esConsistency,
         scoringRationale: result.scoringRationale || fallback.scoringRationale,
         expectedAnswerData: expected,
+        shouldAskDeepDive: Boolean(result.shouldAskDeepDive),
+        followUpReason: String(result.followUpReason || ""),
+        followUpTarget: String(result.followUpTarget || ""),
+        topicResult: normalizeTopicResult(result.topicResult, appState.currentQuestionTopic, result),
         nextQuestion: result.nextQuestion || fallback.nextQuestion,
         createdAt: new Date().toISOString()
-      });
+      }), fallback);
     } catch (error) {
       console.warn("AI answer evaluation failed. Falling back to mock.", error);
-      return fallback;
+      return normalizeEvaluationFlow(fallback, fallback);
     }
   }
 
@@ -1944,7 +2441,7 @@
       return;
     }
     releaseAudioClips();
-    var settings = readSettings();
+    var settings = resolveInterviewerSettings(readSettings());
     var sourceCompanyId = settings.companyId || appState.pendingSourceCompanyId;
     var sourceCompany = sourceCompanyId ? findCompany(sourceCompanyId, appState.activeAccountId) : null;
     var sourceEntries = sourceCompanyId ? getCompanyEsEntries(sourceCompanyId, appState.activeAccountId) : [];
@@ -1982,9 +2479,11 @@
       messages: [],
       evaluations: [],
       entries: [],
+      topicCoverage: initializeTopicCoverage(settings),
       startedAt: new Date().toISOString(),
       finalFeedback: null
     };
+    appState.currentQuestionTopic = null;
     setText("currentQuestion", "質問を生成中です...");
     setText("feedbackSummary", "");
     setText("progressText", "質問 1 / " + settings.questionCount);
@@ -2072,12 +2571,14 @@
 
     setBusy(true, "回答を評価中です...");
     var expectedAnswerData = appState.currentExpectedAnswerData || await getExpectedAnswerData(appState.currentQuestion, appState.settings);
+    var questionTopic = appState.currentQuestionTopic;
     var evaluation = await getAnswerEvaluation(appState.currentQuestion, answer, appState.settings, expectedAnswerData);
     var message = {
       id: makeId("msg"),
       sessionId: appState.interviewLog.id,
       questionNumber: appState.questionIndex + 1,
       question: appState.currentQuestion,
+      topic: topicSummary(questionTopic),
       answer: answer,
       answerInputMode: audioClip ? "voice" : "text",
       transcript: createTranscriptRecord(answer, audioClip),
@@ -2093,6 +2594,7 @@
       questionNumber: message.questionNumber,
       expectedAnswerData: expectedAnswerData
     });
+    evaluationRecord.topicResult = updateTopicCoverageFromEvaluation(evaluationRecord, questionTopic);
 
     appState.interviewLog.messages.push(message);
     appState.interviewLog.evaluations.push(evaluationRecord);
@@ -2101,6 +2603,7 @@
       evaluationId: evaluationRecord.id,
       questionNumber: appState.questionIndex + 1,
       question: appState.currentQuestion,
+      topic: topicSummary(questionTopic),
       answer: answer,
       answerInputMode: message.answerInputMode,
       transcript: message.transcript,
@@ -2125,14 +2628,18 @@
       return;
     }
 
-    appState.currentQuestion = evaluation.deepDiveQuestion || evaluation.nextQuestion || await getInterviewQuestion(appState.settings);
+    var nextQuestionPlan = await chooseNextQuestion(evaluationRecord, appState.settings);
+    Object.assign(evaluationRecord, nextQuestionPlan.evaluation);
+    appState.currentQuestion = nextQuestionPlan.question;
     appState.currentExpectedAnswerData = null;
     setBusy(true, "次の評価基準を生成中です...");
     appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, appState.settings);
     setText("currentQuestion", appState.currentQuestion);
     speakQuestion(appState.currentQuestion);
     setText("progressText", "質問 " + (appState.questionIndex + 1) + " / " + appState.settings.questionCount);
-    setText("feedbackSummary", "次の質問に回答してください。評価の詳細は終了後に確認できます。");
+    setText("feedbackSummary", nextQuestionPlan.isDeepDive
+      ? (nextQuestionPlan.reason || "前の回答で確認しきれない点があるため、そこだけ追加で確認します。")
+      : "前の回答で主要な確認はできたため、別の観点に進みます。");
     setBusy(false);
   }
 
@@ -2156,6 +2663,15 @@
     item.appendChild(questionEl);
     item.appendChild(answerEl);
     item.appendChild(scoreEl);
+    var missing = sanitizeStringArray(evaluation && evaluation.missingElements, []);
+    var unverified = sanitizeStringArray(evaluation && evaluation.unverifiedClaims, []);
+    var reason = String(evaluation && evaluation.followUpReason || makeFollowUpReason(evaluation) || "");
+    if (missing.length || unverified.length || reason) {
+      var reasonEl = document.createElement("p");
+      reasonEl.className = "timeline-followup-note";
+      reasonEl.textContent = reason || "前の回答で確認しきれない点があるため、次の質問で補足します。";
+      item.appendChild(reasonEl);
+    }
     timeline.appendChild(item);
   }
 
@@ -2355,6 +2871,7 @@
         id: message.id,
         questionNumber: message.questionNumber || index + 1,
         question: message.question,
+        topic: message.topic || null,
         answer: message.answer,
         answerInputMode: message.answerInputMode || "text",
         transcript: message.transcript || null,
@@ -2488,6 +3005,7 @@
     meta.textContent = [
       "面接タイプ: " + formatInterviewTypeLabel(settings.interviewType),
       "カテゴリ: " + formatCategoryLabel(settings.category),
+      "面接官: " + getInterviewerType(settings.interviewerType).label + (settings.interviewerTypeMode === "random" ? "（ランダム選択）" : ""),
       "総合点: " + (log.finalFeedback ? log.finalFeedback.finalScore + "点" : "未評価"),
       "日時: " + formatDate(log.savedAt || log.finishedAt || log.startedAt)
     ].join(" / ");
@@ -2515,13 +3033,16 @@
       block.className = "history-detail-section";
       var heading = document.createElement("h4");
       var q = document.createElement("p");
+      var topic = document.createElement("p");
       var a = document.createElement("p");
       var transcript = document.createElement("p");
       var audioNote = document.createElement("p");
       var e = document.createElement("p");
       var deepDive = document.createElement("p");
+      var followUpReason = document.createElement("p");
       heading.textContent = "Q" + entry.questionNumber;
       q.textContent = "Q. " + entry.question;
+      topic.textContent = "テーマ: " + (entry.topic && entry.topic.label ? entry.topic.label : "未記録");
       a.textContent = "A. " + entry.answer;
       transcript.textContent = "文字起こし: " + (entry.transcript && entry.transcript.text ? entry.transcript.text : entry.answer || "");
       audioNote.textContent = entry.audio && entry.audio.reviewAvailableDuringSession
@@ -2529,8 +3050,10 @@
         : "音声: 保存なし";
       e.textContent = "評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし");
       deepDive.textContent = "深掘り質問: " + (entry.evaluation && entry.evaluation.deepDiveQuestion ? entry.evaluation.deepDiveQuestion : "なし");
+      followUpReason.textContent = "追加確認の理由: " + (entry.evaluation && entry.evaluation.followUpReason ? entry.evaluation.followUpReason : "なし");
       block.appendChild(heading);
       block.appendChild(q);
+      block.appendChild(topic);
       block.appendChild(a);
       if (entry.transcript || entry.audio) {
         block.appendChild(transcript);
@@ -2538,6 +3061,7 @@
       }
       block.appendChild(e);
       block.appendChild(deepDive);
+      block.appendChild(followUpReason);
       appendExpectedAnswerData(block, getEntryExpectedAnswerData(entry), entry.evaluation);
       detail.appendChild(block);
     });
@@ -2621,6 +3145,38 @@
     var target = event.target && event.target.closest ? event.target.closest("[data-action='select-interviewer-type']") : null;
     if (target && target.dataset.interviewerType) {
       selectInterviewerType(target.dataset.interviewerType);
+    }
+  }
+
+  function handleInterviewerAvatarKeydown(event) {
+    var keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End", " ", "Enter"];
+    if (keys.indexOf(event.key) === -1) {
+      return;
+    }
+    var options = Array.prototype.slice.call(document.querySelectorAll("[data-action='select-interviewer-type']"));
+    if (!options.length) {
+      return;
+    }
+    var currentIndex = Math.max(0, options.indexOf(document.activeElement));
+    var nextIndex = currentIndex;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % options.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (currentIndex - 1 + options.length) % options.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = options.length - 1;
+    }
+    event.preventDefault();
+    var next = options[nextIndex];
+    if (next && next.dataset.interviewerType) {
+      var nextType = next.dataset.interviewerType;
+      selectInterviewerType(nextType);
+      var refreshed = document.querySelector("[data-action='select-interviewer-type'][data-interviewer-type='" + nextType + "']");
+      if (refreshed) {
+        refreshed.focus();
+      }
     }
   }
 
@@ -3075,6 +3631,7 @@
     on("esEntryList", "click", handleEsEntryListClick);
     on("setupCompanySelect", "change", handleSetupCompanySelectChange);
     on("interviewerAvatarGrid", "click", handleInterviewerAvatarClick);
+    on("interviewerAvatarGrid", "keydown", handleInterviewerAvatarKeydown);
     on("saveAiSettingsBtn", "click", saveAiSettingsFromForm);
     on("testAiConnectionBtn", "click", testAiConnection);
     on("clearAiSettingsBtn", "click", clearAiSettings);
