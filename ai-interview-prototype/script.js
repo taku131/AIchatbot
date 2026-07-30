@@ -9,6 +9,7 @@
   var AI_SETTINGS_KEY = "aiInterviewPrototype.openAiSettings";
   var AI_SESSION_KEY = "aiInterviewPrototype.openAiSessionKey";
   var QUESTION_SPEECH_SETTINGS_KEY = "aiInterviewPrototype.questionSpeechSettings";
+  var CLOUD_MIGRATION_KEY = "aiInterviewPrototype.cloudMigration";
   var RANDOM_INTERVIEWER_TYPE_ID = "random";
 
   var DEFAULT_SETTINGS = {
@@ -26,7 +27,7 @@
 
   var DEFAULT_AI_SETTINGS = {
     mode: "mock",
-    model: "gpt-4.1-mini",
+    model: "gpt-5.6",
     rememberApiKey: false
   };
 
@@ -181,9 +182,14 @@
       "実験や検証で苦労した点と、その乗り越え方を説明してください。"
     ],
     development: [
-      "開発経験の中で、技術的に最も工夫した点を教えてください。",
-      "担当した機能、使用技術、あなたの役割を具体的に説明してください。",
-      "設計や実装で迷った点と、最終的な判断理由を教えてください。"
+      "開発経験の中で、解こうとした課題、担当範囲、成果を一連の流れで説明してください。",
+      "使用技術やアーキテクチャを選んだ理由を、代替案との比較も含めて教えてください。",
+      "設計や実装で迷った点と、最終的な判断理由、捨てた選択肢を教えてください。",
+      "品質を担保するために行ったテスト、レビュー、監視、リリース前確認について説明してください。",
+      "生成AIや自動化ツールを使った場合、どこに使い、どのように出力を検証しましたか。",
+      "性能、セキュリティ、保守性のいずれかで課題になった点と、対応方針を教えてください。",
+      "チーム開発での役割分担、意思決定、レビューであなたが貢献した点を説明してください。",
+      "リリース後または利用後のフィードバックを受けて、改善したことを教えてください。"
     ],
     team: [
       "チームで成果を出した経験について、あなたの役割と貢献を教えてください。",
@@ -216,12 +222,53 @@
     finished: false,
     selectedHistoryId: null,
     activeAccountId: null,
+    editingAccountId: null,
     selectedCompanyId: null,
+    editingCompanyId: null,
     pendingSourceCompanyId: null,
+    editingEsEntryId: null,
     currentExpectedAnswerData: null,
     currentQuestionTopic: null,
     audioClips: {},
-    isBusy: false
+    isBusy: false,
+    historyFilter: {
+      companyName: "",
+      category: "",
+      sort: "date_desc"
+    }
+  };
+
+  function hasUnsavedInterviewProgress() {
+    return !!(appState.interviewLog && !appState.finished &&
+      Array.isArray(appState.interviewLog.entries) && appState.interviewLog.entries.length > 0);
+  }
+
+  function hasPendingCloudInterviewLogSave() {
+    return !!(cloudState.saveTimers && cloudState.saveTimers.interviewLogs);
+  }
+
+  var CLOUD_COLLECTIONS = {
+    [ACCOUNT_STORAGE_KEY]: { stateKey: "accounts", cloudName: "accounts" },
+    [COMPANY_STORAGE_KEY]: { stateKey: "companies", cloudName: "companies" },
+    [ES_STORAGE_KEY]: { stateKey: "esEntries", cloudName: "esEntries" },
+    [STORAGE_KEY]: { stateKey: "interviewLogs", cloudName: "interviewLogs" }
+  };
+
+  var cloudState = {
+    service: null,
+    configured: false,
+    ready: false,
+    loading: false,
+    user: null,
+    profile: {},
+    settings: {},
+    accounts: null,
+    companies: null,
+    esEntries: null,
+    interviewLogs: null,
+    localSnapshot: null,
+    saveTimers: {},
+    lastError: ""
   };
 
   var voiceInputState = {
@@ -288,7 +335,7 @@
     }
   }
 
-  function loadCollection(key) {
+  function loadLocalCollection(key) {
     try {
       var parsed = JSON.parse(localStorage.getItem(key) || "[]");
       return Array.isArray(parsed) ? parsed : [];
@@ -298,13 +345,418 @@
     }
   }
 
-  function saveCollection(key, items) {
+  function saveLocalCollection(key, items) {
     try {
       localStorage.setItem(key, JSON.stringify(items || []));
       return true;
     } catch (error) {
       console.warn("Failed to save local collection:", key, error);
       return false;
+    }
+  }
+
+  function getCloudCollectionDefinition(key) {
+    return CLOUD_COLLECTIONS[key] || null;
+  }
+
+  function isCloudSignedIn() {
+    return Boolean(cloudState.service && cloudState.user && cloudState.ready);
+  }
+
+  function loadCollection(key) {
+    var definition = getCloudCollectionDefinition(key);
+    if (definition && isCloudSignedIn() && Array.isArray(cloudState[definition.stateKey])) {
+      return cloudState[definition.stateKey].slice();
+    }
+    return loadLocalCollection(key);
+  }
+
+  function saveCollection(key, items) {
+    var safeItems = Array.isArray(items) ? items : [];
+    var definition = getCloudCollectionDefinition(key);
+    if (definition && isCloudSignedIn()) {
+      cloudState[definition.stateKey] = safeItems.slice();
+      queueCloudCollectionSave(definition.cloudName, safeItems);
+      return true;
+    }
+    var saved = saveLocalCollection(key, safeItems);
+    if (definition) {
+      cloudState.localSnapshot = null;
+      renderCloudAuthState(null, "");
+    }
+    return saved;
+  }
+
+  function loadLocalObject(key) {
+    try {
+      return JSON.parse(localStorage.getItem(key) || "{}") || {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function captureLocalMigrationSnapshot() {
+    cloudState.localSnapshot = {
+      accounts: loadLocalCollection(ACCOUNT_STORAGE_KEY),
+      companies: loadLocalCollection(COMPANY_STORAGE_KEY),
+      esEntries: loadLocalCollection(ES_STORAGE_KEY),
+      interviewLogs: loadLocalCollection(STORAGE_KEY),
+      activeAccountId: (function () {
+        try {
+          return localStorage.getItem(ACTIVE_ACCOUNT_STORAGE_KEY) || "";
+        } catch (error) {
+          return "";
+        }
+      })(),
+      settings: {
+        aiSettings: loadLocalObject(AI_SETTINGS_KEY),
+        questionSpeechSettings: loadLocalObject(QUESTION_SPEECH_SETTINGS_KEY)
+      }
+    };
+    return cloudState.localSnapshot;
+  }
+
+  function hasLocalMigrationData() {
+    var snapshot = cloudState.localSnapshot || captureLocalMigrationSnapshot();
+    return ["accounts", "companies", "esEntries", "interviewLogs"].some(function (key) {
+      return Array.isArray(snapshot[key]) && snapshot[key].length > 0;
+    });
+  }
+
+  function mergeRecordsById(primary, secondary) {
+    var map = new Map();
+    (Array.isArray(primary) ? primary : []).forEach(function (item) {
+      if (item && item.id) {
+        map.set(item.id, item);
+      }
+    });
+    (Array.isArray(secondary) ? secondary : []).forEach(function (item) {
+      if (item && item.id && !map.has(item.id)) {
+        map.set(item.id, item);
+      }
+    });
+    return Array.from(map.values()).sort(function (a, b) {
+      return String(b.updatedAt || b.savedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.savedAt || a.createdAt || ""));
+    });
+  }
+
+  function getCloudMigrationState() {
+    try {
+      return JSON.parse(localStorage.getItem(CLOUD_MIGRATION_KEY) || "{}") || {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function hasMigratedToCloud(uid) {
+    var state = getCloudMigrationState();
+    return Boolean(uid && state[uid]);
+  }
+
+  function markMigratedToCloud(uid) {
+    if (!uid) {
+      return;
+    }
+    try {
+      var state = getCloudMigrationState();
+      state[uid] = new Date().toISOString();
+      localStorage.setItem(CLOUD_MIGRATION_KEY, JSON.stringify(state));
+    } catch (error) {
+      console.warn("Cloud migration state could not be saved:", error);
+    }
+  }
+
+  function queueCloudCollectionSave(collectionName, items) {
+    if (!isCloudSignedIn() || !collectionName) {
+      return;
+    }
+    clearTimeout(cloudState.saveTimers[collectionName]);
+    cloudState.saveTimers[collectionName] = setTimeout(function () {
+      cloudState.service.replaceCollection(cloudState.user.uid, collectionName, items).catch(function (error) {
+        cloudState.lastError = error && error.message ? error.message : String(error);
+        renderCloudAuthState("クラウド保存に失敗しました: " + cloudState.lastError, "error");
+      });
+    }, 250);
+  }
+
+  function queueCloudProfileSave() {
+    if (!isCloudSignedIn()) {
+      return;
+    }
+    var profile = Object.assign({}, cloudState.profile || {}, {
+      activeAccountId: appState.activeAccountId || null
+    });
+    cloudState.profile = profile;
+    cloudState.service.saveProfile(cloudState.user.uid, profile).catch(function (error) {
+      console.warn("Cloud profile save failed:", error);
+    });
+  }
+
+  function queueCloudSettingsSave(settings) {
+    if (!isCloudSignedIn()) {
+      return;
+    }
+    cloudState.service.saveSettings(cloudState.user.uid, {
+      aiSettings: settings || loadAiSettings(),
+      questionSpeechSettings: loadLocalObject(QUESTION_SPEECH_SETTINGS_KEY)
+    }).catch(function (error) {
+      console.warn("Cloud settings save failed:", error);
+    });
+  }
+
+  function upsertGoogleAccount(user) {
+    if (!user || !user.uid) {
+      return null;
+    }
+    var accounts = Array.isArray(cloudState.accounts) ? cloudState.accounts.slice() : loadAccounts();
+    var existingIndex = accounts.findIndex(function (account) {
+      return account.id === user.uid;
+    });
+    var timestamp = nowIso();
+    var account = Object.assign({}, existingIndex >= 0 ? accounts[existingIndex] : {}, {
+      id: user.uid,
+      displayName: user.displayName || user.email || "Googleユーザー",
+      email: user.email || "",
+      photoURL: user.photoURL || "",
+      provider: "google",
+      updatedAt: timestamp
+    });
+    if (!account.createdAt) {
+      account.createdAt = timestamp;
+    }
+    if (existingIndex >= 0) {
+      accounts[existingIndex] = account;
+    } else {
+      accounts.unshift(account);
+    }
+    cloudState.accounts = accounts;
+    queueCloudCollectionSave("accounts", accounts);
+    return account;
+  }
+
+  function applyCloudData(user, data) {
+    cloudState.user = user || null;
+    cloudState.profile = Object.assign({}, data && data.profile ? data.profile : {});
+    cloudState.settings = Object.assign({}, data && data.settings ? data.settings : {});
+    cloudState.accounts = Array.isArray(data && data.accounts) ? data.accounts.slice() : [];
+    cloudState.companies = Array.isArray(data && data.companies) ? data.companies.slice() : [];
+    cloudState.esEntries = Array.isArray(data && data.esEntries) ? data.esEntries.slice() : [];
+    cloudState.interviewLogs = Array.isArray(data && data.interviewLogs) ? data.interviewLogs.slice() : [];
+    upsertGoogleAccount(user);
+    var activeId = cloudState.profile.activeAccountId || (user && user.uid);
+    if (activeId && cloudState.accounts.some(function (account) {
+      return account.id === activeId;
+    })) {
+      rememberActiveAccount(activeId);
+    } else if (user && user.uid) {
+      rememberActiveAccount(user.uid);
+    }
+    var companies = getAccountCompanies(appState.activeAccountId);
+    appState.selectedCompanyId = companies.length ? companies[0].id : null;
+  }
+
+  function renderCloudAuthState(message, mode) {
+    var panel = document.querySelector(".cloud-auth-panel");
+    var signInButton = $("googleSignInBtn");
+    var signOutButton = $("googleSignOutBtn");
+    var migrateButton = $("migrateLocalDataBtn");
+    if (panel && panel.classList) {
+      panel.classList.remove("is-connected", "is-error");
+      if (mode === "connected") {
+        panel.classList.add("is-connected");
+      } else if (mode === "error") {
+        panel.classList.add("is-error");
+      }
+    }
+    if (signInButton) {
+      signInButton.hidden = Boolean(cloudState.user);
+      signInButton.disabled = cloudState.loading || !cloudState.configured;
+    }
+    if (signOutButton) {
+      signOutButton.hidden = !cloudState.user;
+      signOutButton.disabled = cloudState.loading;
+    }
+    if (migrateButton) {
+      migrateButton.hidden = !cloudState.user || !hasLocalMigrationData() || hasMigratedToCloud(cloudState.user.uid);
+      migrateButton.disabled = cloudState.loading;
+    }
+    var switchAccountButton = $("switchAccountBtn");
+    if (switchAccountButton) {
+      switchAccountButton.textContent = cloudState.user ? "ログアウト" : "アカウント切替";
+    }
+    if (message) {
+      setText("cloudSyncStatus", message);
+      return;
+    }
+    if (!cloudState.service) {
+      setText("cloudSyncStatus", "Firebase連携モジュールを読み込み中です。");
+    } else if (!cloudState.configured) {
+      setText("cloudSyncStatus", "Firebase設定が未設定です。docs/google-firebase-setup.md に沿って window.AI_INTERVIEW_FIREBASE_CONFIG を設定してください。");
+    } else if (cloudState.loading) {
+      setText("cloudSyncStatus", "クラウドデータを同期中です...");
+    } else if (cloudState.user) {
+      setText("cloudSyncStatus", "Googleログイン中: " + (cloudState.user.email || cloudState.user.displayName || cloudState.user.uid));
+    } else {
+      setText("cloudSyncStatus", "Googleでログインすると、この端末のデータをFirestoreへ移行し、以後クラウド保存できます。");
+    }
+  }
+
+  async function handleCloudUser(user) {
+    cloudState.user = user || null;
+    if (!user) {
+      cloudState.ready = false;
+      cloudState.accounts = null;
+      cloudState.companies = null;
+      cloudState.esEntries = null;
+      cloudState.interviewLogs = null;
+      rememberActiveAccount(null);
+      appState.selectedCompanyId = null;
+      appState.pendingSourceCompanyId = null;
+      renderSourceEsPreview(null, []);
+      renderCloudAuthState("ログアウトしました。ローカルデータのみ使用します。", "");
+      renderAccounts();
+      renderWorkspace();
+      if (!hasUnsavedInterviewProgress()) {
+        showView("accountView");
+      }
+      return;
+    }
+    cloudState.loading = true;
+    renderCloudAuthState("Googleログインを確認しました。クラウドデータを読み込み中です...", "connected");
+    try {
+      var data = await cloudState.service.loadUserData(user.uid);
+      cloudState.ready = true;
+      applyCloudData(user, data);
+      renderAccounts();
+      renderWorkspace();
+      renderAiSettings();
+      if (!hasUnsavedInterviewProgress()) {
+        showView(appState.activeAccountId ? "workspaceView" : "accountView");
+      }
+      renderCloudAuthState(null, "connected");
+      queueCloudProfileSave();
+    } catch (error) {
+      cloudState.ready = false;
+      cloudState.lastError = error && error.message ? error.message : String(error);
+      renderCloudAuthState("クラウドデータの読み込みに失敗しました: " + cloudState.lastError, "error");
+    } finally {
+      cloudState.loading = false;
+      renderCloudAuthState(null, cloudState.user ? "connected" : "");
+    }
+  }
+
+  function initializeCloudIntegration() {
+    function attach(service) {
+      if (!service || cloudState.service) {
+        return;
+      }
+      cloudState.service = service;
+      cloudState.configured = Boolean(service.getStatus && service.getStatus().configured);
+      renderCloudAuthState(null, "");
+      service.init().then(function (status) {
+        cloudState.configured = Boolean(status && status.enabled);
+        renderCloudAuthState(null, "");
+        service.onAuthStateChanged(function (user, authStatus) {
+          cloudState.configured = Boolean(authStatus && authStatus.enabled);
+          if (!cloudState.configured) {
+            renderCloudAuthState(null, "");
+            return;
+          }
+          handleCloudUser(user);
+        });
+      }).catch(function (error) {
+        cloudState.lastError = error && error.message ? error.message : String(error);
+        renderCloudAuthState("Firebase初期化に失敗しました: " + cloudState.lastError, "error");
+      });
+    }
+    if (window.aiInterviewCloud) {
+      attach(window.aiInterviewCloud);
+    } else {
+      window.addEventListener("aiInterviewCloudReady", function (event) {
+        attach(event.detail || window.aiInterviewCloud);
+      }, { once: true });
+      renderCloudAuthState(null, "");
+    }
+  }
+
+  async function signInWithGoogle(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    if (!cloudState.service || !cloudState.configured) {
+      renderCloudAuthState("Firebase設定が未設定です。先にFirebase Web app configを設定してください。", "error");
+      return;
+    }
+    captureLocalMigrationSnapshot();
+    cloudState.loading = true;
+    renderCloudAuthState("Googleログインを開始しています...", "");
+    try {
+      await cloudState.service.signInWithGoogle();
+    } catch (error) {
+      cloudState.lastError = error && error.message ? error.message : String(error);
+      renderCloudAuthState("Googleログインに失敗しました: " + cloudState.lastError, "error");
+    } finally {
+      cloudState.loading = false;
+      renderCloudAuthState(null, cloudState.user ? "connected" : "");
+    }
+  }
+
+  async function signOutGoogle(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    if (!cloudState.service || !cloudState.user) {
+      return;
+    }
+    cloudState.loading = true;
+    renderCloudAuthState("ログアウト中です...", "");
+    try {
+      await cloudState.service.signOutGoogle();
+    } catch (error) {
+      cloudState.lastError = error && error.message ? error.message : String(error);
+      renderCloudAuthState("ログアウトに失敗しました: " + cloudState.lastError, "error");
+    } finally {
+      cloudState.loading = false;
+    }
+  }
+
+  async function migrateLocalDataToCloud(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    if (!isCloudSignedIn()) {
+      renderCloudAuthState("先にGoogleログインしてください。", "error");
+      return;
+    }
+    if (!hasLocalMigrationData()) {
+      renderCloudAuthState("移行できるlocalStorageデータはありません。", "connected");
+      return;
+    }
+    cloudState.loading = true;
+    renderCloudAuthState("この端末のlocalStorageデータをFirestoreへ移行中です...", "connected");
+    try {
+      var snapshot = cloudState.localSnapshot || captureLocalMigrationSnapshot();
+      var data = {
+        profile: { activeAccountId: snapshot.activeAccountId || appState.activeAccountId || cloudState.user.uid },
+        accounts: mergeRecordsById(snapshot.accounts, cloudState.accounts),
+        companies: mergeRecordsById(snapshot.companies, cloudState.companies),
+        esEntries: mergeRecordsById(snapshot.esEntries, cloudState.esEntries),
+        interviewLogs: mergeRecordsById(snapshot.interviewLogs, cloudState.interviewLogs),
+        settings: snapshot.settings || {}
+      };
+      var migrated = await cloudState.service.migrateLocalDataToCloud(cloudState.user.uid, data);
+      applyCloudData(cloudState.user, migrated);
+      markMigratedToCloud(cloudState.user.uid);
+      renderAccounts();
+      renderWorkspace();
+      renderHistory();
+      renderCloudAuthState("localStorageデータをFirestoreへ移行しました。", "connected");
+    } catch (error) {
+      cloudState.lastError = error && error.message ? error.message : String(error);
+      renderCloudAuthState("localStorage移行に失敗しました: " + cloudState.lastError, "error");
+    } finally {
+      cloudState.loading = false;
+      renderCloudAuthState(null, cloudState.user ? "connected" : "");
     }
   }
 
@@ -505,6 +957,12 @@
     });
   }
 
+  function getAccountInterviewLogs(accountId) {
+    return loadInterviewLogs().filter(function (log) {
+      return log.accountId === accountId;
+    });
+  }
+
   function getCompanyEsEntries(companyId, accountId) {
     return loadEsEntries().filter(function (entry) {
       return entry.companyId === companyId && (!accountId || entry.accountId === accountId);
@@ -532,6 +990,7 @@
     } catch (error) {
       console.warn("Failed to persist active account:", error);
     }
+    queueCloudProfileSave();
   }
 
   function showView(viewId) {
@@ -566,13 +1025,31 @@
     }
     accounts.forEach(function (account) {
       var item = document.createElement("div");
-      var button = document.createElement("button");
-      button.type = "button";
-      button.className = "account-item" + (account.id === appState.activeAccountId ? " is-selected" : "");
-      button.dataset.accountId = account.id;
-      button.dataset.action = "select-account";
-      button.textContent = account.displayName + (account.email ? " / " + account.email : "");
-      item.appendChild(button);
+      var selectButton = document.createElement("button");
+      var actions = document.createElement("div");
+      var editButton = document.createElement("button");
+      var deleteButton = document.createElement("button");
+      item.className = "account-item" + (account.id === appState.activeAccountId ? " is-selected" : "");
+      selectButton.type = "button";
+      selectButton.className = "account-item-select";
+      selectButton.dataset.accountId = account.id;
+      selectButton.dataset.action = "select-account";
+      selectButton.textContent = account.displayName + (account.email ? " / " + account.email : "");
+      actions.className = "form-actions";
+      editButton.type = "button";
+      editButton.className = "button button-secondary button-small";
+      editButton.dataset.accountId = account.id;
+      editButton.dataset.action = "edit-account";
+      editButton.textContent = "編集";
+      deleteButton.type = "button";
+      deleteButton.className = "button button-danger button-small";
+      deleteButton.dataset.accountId = account.id;
+      deleteButton.dataset.action = "delete-account";
+      deleteButton.textContent = "削除";
+      actions.appendChild(editButton);
+      actions.appendChild(deleteButton);
+      item.appendChild(selectButton);
+      item.appendChild(actions);
       list.appendChild(item);
     });
   }
@@ -608,24 +1085,57 @@
       }
       companies.forEach(function (company) {
         var item = document.createElement("div");
-        var button = document.createElement("button");
+        var selectButton = document.createElement("button");
         var title = document.createElement("span");
         var meta = document.createElement("span");
         var notes = document.createElement("span");
-        button.type = "button";
-        button.className = "company-item" + (company.id === appState.selectedCompanyId ? " is-selected" : "");
-        button.dataset.companyId = company.id;
-        button.dataset.action = "select-company";
+        var actions = document.createElement("div");
+        var editButton = document.createElement("button");
+        var duplicateButton = document.createElement("button");
+        var deleteButton = document.createElement("button");
+
+        item.className = "company-item" + (company.id === appState.selectedCompanyId ? " is-selected" : "");
+
+        selectButton.type = "button";
+        selectButton.className = "company-card-select";
+        selectButton.dataset.companyId = company.id;
+        selectButton.dataset.action = "select-company";
         title.className = "company-card-title";
         title.textContent = company.companyName || "企業名未設定";
         meta.className = "company-card-meta";
         meta.textContent = [company.role || "職種未設定", company.stage || "応募区分未設定"].join(" / ");
         notes.className = "company-card-notes";
         notes.textContent = company.notes || "企業メモなし";
-        button.appendChild(title);
-        button.appendChild(meta);
-        button.appendChild(notes);
-        item.appendChild(button);
+        selectButton.appendChild(title);
+        selectButton.appendChild(meta);
+        selectButton.appendChild(notes);
+
+        actions.className = "form-actions";
+
+        editButton.type = "button";
+        editButton.className = "button button-secondary button-small";
+        editButton.dataset.companyId = company.id;
+        editButton.dataset.action = "edit-company";
+        editButton.textContent = "編集";
+
+        duplicateButton.type = "button";
+        duplicateButton.className = "button button-secondary button-small";
+        duplicateButton.dataset.companyId = company.id;
+        duplicateButton.dataset.action = "duplicate-company";
+        duplicateButton.textContent = "複製";
+
+        deleteButton.type = "button";
+        deleteButton.className = "button button-danger button-small";
+        deleteButton.dataset.companyId = company.id;
+        deleteButton.dataset.action = "delete-company";
+        deleteButton.textContent = "削除";
+
+        actions.appendChild(editButton);
+        actions.appendChild(duplicateButton);
+        actions.appendChild(deleteButton);
+
+        item.appendChild(selectButton);
+        item.appendChild(actions);
         list.appendChild(item);
       });
     }
@@ -657,7 +1167,7 @@
 
     entries.forEach(function (entry) {
       var item = document.createElement("article");
-      item.className = "es-entry-item";
+      item.className = "es-entry-item" + (entry.id === appState.editingEsEntryId ? " is-editing" : "");
 
       var title = document.createElement("p");
       title.className = "item-title";
@@ -683,6 +1193,30 @@
       useButton.dataset.action = "use-es-entry";
       useButton.textContent = "この企業のESで面接練習";
       actions.appendChild(useButton);
+
+      var editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "button button-secondary button-small";
+      editButton.dataset.esEntryId = entry.id;
+      editButton.dataset.action = "edit-es-entry";
+      editButton.textContent = "編集";
+      actions.appendChild(editButton);
+
+      var duplicateButton = document.createElement("button");
+      duplicateButton.type = "button";
+      duplicateButton.className = "button button-secondary button-small";
+      duplicateButton.dataset.esEntryId = entry.id;
+      duplicateButton.dataset.action = "duplicate-es-entry";
+      duplicateButton.textContent = "複製";
+      actions.appendChild(duplicateButton);
+
+      var deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "button button-danger button-small";
+      deleteButton.dataset.esEntryId = entry.id;
+      deleteButton.dataset.action = "delete-es-entry";
+      deleteButton.textContent = "削除";
+      actions.appendChild(deleteButton);
 
       item.appendChild(actions);
       list.appendChild(item);
@@ -751,6 +1285,26 @@
     }
 
     var timestamp = nowIso();
+    var accounts = loadAccounts();
+
+    if (appState.editingAccountId) {
+      var target = accounts.find(function (item) {
+        return item.id === appState.editingAccountId;
+      });
+      if (!target) {
+        cancelAccountEdit();
+        renderAccounts();
+        return;
+      }
+      target.displayName = displayName;
+      target.email = email;
+      target.updatedAt = timestamp;
+      saveAccounts(accounts);
+      cancelAccountEdit();
+      renderAccounts();
+      return;
+    }
+
     var account = {
       id: makeId("acct"),
       displayName: displayName,
@@ -758,7 +1312,6 @@
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    var accounts = loadAccounts();
     accounts.unshift(account);
     saveAccounts(accounts);
     setValue("accountNameInput", "");
@@ -766,10 +1319,119 @@
     selectAccount(account.id);
   }
 
+  function ensureCancelAccountEditButton() {
+    var existing = $("cancelAccountEditBtn");
+    if (existing) {
+      return existing;
+    }
+    var form = $("accountForm");
+    var actions = form ? form.querySelector(".form-actions") : null;
+    if (!actions) {
+      return null;
+    }
+    var button = document.createElement("button");
+    button.type = "button";
+    button.id = "cancelAccountEditBtn";
+    button.className = "button button-ghost button-small";
+    button.textContent = "編集をキャンセル";
+    button.addEventListener("click", function () {
+      cancelAccountEdit();
+    });
+    actions.appendChild(button);
+    return button;
+  }
+
+  function removeCancelAccountEditButton() {
+    var existing = $("cancelAccountEditBtn");
+    if (existing && existing.parentNode) {
+      existing.parentNode.removeChild(existing);
+    }
+  }
+
+  function startEditAccount(accountId) {
+    var account = loadAccounts().find(function (item) {
+      return item.id === accountId;
+    });
+    if (!account) {
+      return;
+    }
+    appState.editingAccountId = account.id;
+    setValue("accountNameInput", account.displayName);
+    setValue("accountEmailInput", account.email || "");
+    setText("createAccountBtn", "変更を保存");
+    ensureCancelAccountEditButton();
+    var nameInput = $("accountNameInput");
+    if (nameInput && typeof nameInput.focus === "function") {
+      nameInput.focus();
+    }
+  }
+
+  function cancelAccountEdit() {
+    appState.editingAccountId = null;
+    setValue("accountNameInput", "");
+    setValue("accountEmailInput", "");
+    setText("createAccountBtn", "作成して始める");
+    removeCancelAccountEditButton();
+  }
+
+  function deleteAccountCascade(accountId) {
+    var account = loadAccounts().find(function (item) {
+      return item.id === accountId;
+    });
+    if (!account) {
+      return;
+    }
+    var confirmed = window.confirm(
+      "「" + account.displayName + "」を削除します。このアカウントに紐づく企業・ES・面接履歴もすべて削除されます。この操作は元に戻せません。よろしいですか？"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    if (appState.editingAccountId === accountId) {
+      cancelAccountEdit();
+    }
+
+    var remainingAccounts = loadAccounts().filter(function (item) {
+      return item.id !== accountId;
+    });
+    saveAccounts(remainingAccounts);
+
+    var remainingCompanies = loadCompanies().filter(function (company) {
+      return company.accountId !== accountId;
+    });
+    saveCompanies(remainingCompanies);
+
+    var remainingEsEntries = loadEsEntries().filter(function (entry) {
+      return entry.accountId !== accountId;
+    });
+    saveEsEntries(remainingEsEntries);
+
+    var remainingLogs = loadInterviewLogs().filter(function (log) {
+      return log.accountId !== accountId;
+    });
+    saveInterviewLogs(remainingLogs);
+
+    if (appState.activeAccountId === accountId) {
+      appState.editingCompanyId = null;
+      appState.editingEsEntryId = null;
+      selectAccount(null);
+      return;
+    }
+
+    renderAccounts();
+  }
+
   function selectAccount(accountId) {
     var account = loadAccounts().find(function (item) {
       return item.id === accountId;
     });
+    if (appState.editingCompanyId) {
+      cancelEditCompany();
+    }
+    if (appState.editingEsEntryId) {
+      resetEsEditingState();
+    }
     if (!account) {
       rememberActiveAccount(null);
       appState.selectedCompanyId = null;
@@ -804,25 +1466,146 @@
     }
 
     var timestamp = nowIso();
-    var company = {
-      id: makeId("company"),
-      accountId: appState.activeAccountId,
-      companyName: companyName,
-      role: getValue("companyRoleInput", ""),
-      stage: getValue("companyStageInput", ""),
-      notes: getValue("companyNotesInput", ""),
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
     var companies = loadCompanies();
-    companies.unshift(company);
+    var company = null;
+
+    if (appState.editingCompanyId) {
+      company = companies.find(function (item) {
+        return item.id === appState.editingCompanyId && item.accountId === appState.activeAccountId;
+      }) || null;
+    }
+
+    if (company) {
+      company.companyName = companyName;
+      company.role = getValue("companyRoleInput", "");
+      company.stage = getValue("companyStageInput", "");
+      company.notes = getValue("companyNotesInput", "");
+      company.updatedAt = timestamp;
+    } else {
+      company = {
+        id: makeId("company"),
+        accountId: appState.activeAccountId,
+        companyName: companyName,
+        role: getValue("companyRoleInput", ""),
+        stage: getValue("companyStageInput", ""),
+        notes: getValue("companyNotesInput", ""),
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      companies.unshift(company);
+    }
+
     saveCompanies(companies);
+    if (appState.editingEsEntryId && appState.selectedCompanyId !== company.id) {
+      resetEsEditingState();
+    }
     appState.selectedCompanyId = company.id;
+    appState.editingCompanyId = null;
     applyCompanyToSetup(company);
     setValue("companyNameInput", "");
     setValue("companyRoleInput", "");
     setValue("companyStageInput", "");
     setValue("companyNotesInput", "");
+    updateCompanyFormMode();
+    renderWorkspace();
+  }
+
+  function updateCompanyFormMode() {
+    var isEditing = Boolean(appState.editingCompanyId);
+    setText("saveCompanyBtn", isEditing ? "変更を保存" : "企業を保存");
+    var cancelButton = $("cancelEditCompanyBtn");
+    if (cancelButton) {
+      cancelButton.hidden = !isEditing;
+    }
+  }
+
+  function startEditCompany(companyId) {
+    var company = findCompany(companyId, appState.activeAccountId);
+    if (!company) {
+      return;
+    }
+    appState.editingCompanyId = company.id;
+    setValue("companyNameInput", company.companyName || "");
+    setValue("companyRoleInput", company.role || "");
+    setValue("companyStageInput", company.stage || "");
+    setValue("companyNotesInput", company.notes || "");
+    updateCompanyFormMode();
+  }
+
+  function cancelEditCompany() {
+    appState.editingCompanyId = null;
+    setValue("companyNameInput", "");
+    setValue("companyRoleInput", "");
+    setValue("companyStageInput", "");
+    setValue("companyNotesInput", "");
+    updateCompanyFormMode();
+  }
+
+  function duplicateCompany(companyId) {
+    var company = findCompany(companyId, appState.activeAccountId);
+    if (!company) {
+      return;
+    }
+    var timestamp = nowIso();
+    var duplicate = {
+      id: makeId("company"),
+      accountId: company.accountId,
+      companyName: (company.companyName || "") + "（コピー）",
+      role: company.role || "",
+      stage: company.stage || "",
+      notes: company.notes || "",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    var companies = loadCompanies();
+    companies.unshift(duplicate);
+    saveCompanies(companies);
+    if (appState.editingEsEntryId) {
+      resetEsEditingState();
+    }
+    appState.selectedCompanyId = duplicate.id;
+    if (appState.editingCompanyId === companyId) {
+      cancelEditCompany();
+    }
+    renderWorkspace();
+  }
+
+  function deleteCompany(companyId) {
+    var company = findCompany(companyId, appState.activeAccountId);
+    if (!company) {
+      return;
+    }
+    var companyName = company.companyName || "企業名未設定";
+    var confirmed = window.confirm(
+      "「" + companyName + "」を削除します。この企業に紐づくESもすべて削除されます。この操作は元に戻せません。よろしいですか？"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    var companies = loadCompanies().filter(function (item) {
+      return item.id !== companyId || item.accountId !== appState.activeAccountId;
+    });
+    saveCompanies(companies);
+
+    var removingEditedEsEntry = appState.editingEsEntryId && loadEsEntries().some(function (entry) {
+      return entry.id === appState.editingEsEntryId && entry.companyId === companyId;
+    });
+    var esEntries = loadEsEntries().filter(function (entry) {
+      return entry.companyId !== companyId || entry.accountId !== appState.activeAccountId;
+    });
+    saveEsEntries(esEntries);
+    if (removingEditedEsEntry) {
+      resetEsEditingState();
+    }
+
+    if (appState.editingCompanyId === companyId) {
+      cancelEditCompany();
+    }
+    if (appState.selectedCompanyId === companyId) {
+      appState.selectedCompanyId = null;
+    }
+
     renderWorkspace();
   }
 
@@ -844,26 +1627,161 @@
     }
 
     var maxChars = parseInt(getValue("esMaxCharsInput", ""), 10);
+    var hasMaxChars = Number.isFinite(maxChars) && maxChars > 0;
+    var answerText = getRawValue("esAnswerInput", "");
+    if (hasMaxChars && answerText.length > maxChars) {
+      setText("esCharCount", "文字数制限（" + maxChars + "文字）を超えています。回答を短くしてから保存してください。");
+      return;
+    }
+
     var timestamp = nowIso();
-    var entry = {
+    var entries = loadEsEntries();
+
+    if (appState.editingEsEntryId) {
+      var existingEntry = entries.find(function (item) {
+        return item.id === appState.editingEsEntryId && item.accountId === accountId && item.companyId === companyId;
+      });
+      if (existingEntry) {
+        existingEntry.questionText = questionText;
+        existingEntry.answerText = answerText;
+        existingEntry.maxChars = hasMaxChars ? maxChars : null;
+        existingEntry.category = normalizeCategory(getValue("esCategorySelect", DEFAULT_SETTINGS.category));
+        existingEntry.status = getValue("esStatusSelect", "draft") || "draft";
+        existingEntry.updatedAt = timestamp;
+      }
+    } else {
+      var entry = {
+        id: makeId("es"),
+        accountId: accountId,
+        companyId: companyId,
+        questionText: questionText,
+        answerText: answerText,
+        maxChars: hasMaxChars ? maxChars : null,
+        category: normalizeCategory(getValue("esCategorySelect", DEFAULT_SETTINGS.category)),
+        status: getValue("esStatusSelect", "draft") || "draft",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      entries.unshift(entry);
+    }
+
+    saveEsEntries(entries);
+    resetEsEditingState();
+    renderEsEntries();
+    renderSetupCompanySelect();
+  }
+
+  function resetEsEditingState() {
+    appState.editingEsEntryId = null;
+    setValue("esQuestionInput", "");
+    setValue("esAnswerInput", "");
+    updateEsEditModeUi();
+    updateEsCharCount();
+  }
+
+  function updateEsEditModeUi() {
+    var saveButton = $("saveEsBtn");
+    var isEditing = !!appState.editingEsEntryId;
+    if (saveButton) {
+      saveButton.textContent = isEditing ? "変更を保存" : "ESを保存";
+    }
+    if (isEditing) {
+      var cancelButton = getOrCreateEsCancelEditButton();
+      if (cancelButton) {
+        cancelButton.style.display = "";
+      }
+    } else {
+      var existingCancelButton = $("esCancelEditBtn");
+      if (existingCancelButton) {
+        existingCancelButton.style.display = "none";
+      }
+    }
+  }
+
+  function getOrCreateEsCancelEditButton() {
+    var existing = $("esCancelEditBtn");
+    if (existing) {
+      return existing;
+    }
+    var saveButton = $("saveEsBtn");
+    if (!saveButton || !saveButton.parentNode) {
+      return null;
+    }
+    var cancelButton = document.createElement("button");
+    cancelButton.id = "esCancelEditBtn";
+    cancelButton.type = "button";
+    cancelButton.className = "button button-ghost";
+    cancelButton.textContent = "編集をキャンセル";
+    cancelButton.addEventListener("click", function () {
+      cancelEditEsEntry();
+    });
+    saveButton.parentNode.insertBefore(cancelButton, saveButton.nextSibling);
+    return cancelButton;
+  }
+
+  function startEditEsEntry(entryId) {
+    var entry = findEsEntry(entryId);
+    if (!entry) {
+      return;
+    }
+    appState.editingEsEntryId = entry.id;
+    setValue("esQuestionInput", entry.questionText || "");
+    setValue("esAnswerInput", entry.answerText || "");
+    setValue("esMaxCharsInput", entry.maxChars ? String(entry.maxChars) : "");
+    setValue("esCategorySelect", normalizeCategory(entry.category));
+    setValue("esStatusSelect", entry.status || "draft");
+    updateEsEditModeUi();
+    updateEsCharCount();
+    renderEsEntries();
+  }
+
+  function cancelEditEsEntry() {
+    resetEsEditingState();
+    renderEsEntries();
+  }
+
+  function deleteEsEntry(entryId) {
+    var entry = findEsEntry(entryId);
+    if (!entry) {
+      return;
+    }
+    var preview = String(entry.questionText || "").slice(0, 30);
+    var confirmed = window.confirm("「" + preview + "」のESを削除します。この操作は元に戻せません。よろしいですか？");
+    if (!confirmed) {
+      return;
+    }
+    var entries = loadEsEntries().filter(function (item) {
+      return item.id !== entryId || item.accountId !== appState.activeAccountId;
+    });
+    saveEsEntries(entries);
+    if (appState.editingEsEntryId === entryId) {
+      resetEsEditingState();
+    }
+    renderEsEntries();
+    renderSetupCompanySelect();
+  }
+
+  function duplicateEsEntry(entryId) {
+    var entry = findEsEntry(entryId);
+    if (!entry) {
+      return;
+    }
+    var timestamp = nowIso();
+    var duplicate = {
       id: makeId("es"),
-      accountId: accountId,
-      companyId: companyId,
-      questionText: questionText,
-      answerText: getRawValue("esAnswerInput", ""),
-      maxChars: Number.isFinite(maxChars) && maxChars > 0 ? maxChars : null,
-      category: normalizeCategory(getValue("esCategorySelect", DEFAULT_SETTINGS.category)),
-      status: getValue("esStatusSelect", "draft") || "draft",
+      accountId: entry.accountId,
+      companyId: entry.companyId,
+      questionText: (entry.questionText || "") + "（コピー）",
+      answerText: entry.answerText,
+      maxChars: entry.maxChars,
+      category: entry.category,
+      status: entry.status,
       createdAt: timestamp,
       updatedAt: timestamp
     };
-
     var entries = loadEsEntries();
-    entries.unshift(entry);
+    entries.unshift(duplicate);
     saveEsEntries(entries);
-    setValue("esQuestionInput", "");
-    setValue("esAnswerInput", "");
-    updateEsCharCount();
     renderEsEntries();
     renderSetupCompanySelect();
   }
@@ -894,6 +1812,9 @@
     var company = findCompany(companyId, appState.activeAccountId);
     if (!company) {
       return;
+    }
+    if (appState.editingEsEntryId) {
+      resetEsEditingState();
     }
     appState.selectedCompanyId = company.id;
     appState.pendingSourceCompanyId = null;
@@ -1061,6 +1982,7 @@
     } catch (error) {
       console.warn("AI settings could not be saved:", error);
     }
+    queueCloudSettingsSave(copy);
     updateAiStatus();
   }
 
@@ -1069,13 +1991,17 @@
       event.preventDefault();
     }
     var remember = $("rememberApiKeyInput");
+    var apiKey = getValue("openAiApiKeyInput", "");
+    var mode = getValue("aiModeSelect", DEFAULT_AI_SETTINGS.mode);
     saveAiSettings({
-      apiKey: getValue("openAiApiKeyInput", ""),
+      apiKey: apiKey,
       model: getValue("openAiModelInput", DEFAULT_AI_SETTINGS.model),
-      mode: getValue("aiModeSelect", DEFAULT_AI_SETTINGS.mode),
+      mode: mode,
       rememberApiKey: remember ? remember.checked : false
     });
-    setText("aiSettingsMessage", "AI設定を保存しました。");
+    setText("aiSettingsMessage", mode === "openai" && !apiKey
+      ? "AI設定を保存しましたが、OpenAI APIキーが未入力のためモック評価が使われます。"
+      : "AI設定を保存しました。");
     renderAiSettings();
   }
 
@@ -1093,6 +2019,11 @@
     } catch (error) {
       console.warn("AI settings could not be cleared:", error);
     }
+    queueCloudSettingsSave({
+      mode: "mock",
+      model: DEFAULT_AI_SETTINGS.model,
+      rememberApiKey: false
+    });
     renderAiSettings();
     setText("aiSettingsMessage", "APIキーを削除し、モックモードに戻しました。");
   }
@@ -1316,10 +2247,10 @@
     },
     technical: {
       intentLabel: "technical_problem_solving",
-      evidenceFields: ["problem", "technical_choice", "implementation_role", "tradeoff", "debugging", "test", "outcome"],
-      mustInclude: ["解いた課題", "技術選定の理由", "担当範囲", "実装上の判断", "検証やテスト", "結果"],
-      shouldInclude: ["計算量や性能", "代替案との比較", "障害対応や改善"],
-      followUpFocus: ["なぜその技術を選んだか", "トレードオフ", "品質をどう担保したか"]
+      evidenceFields: ["problem", "technical_choice", "implementation_role", "architecture", "tradeoff", "ai_or_automation_use", "testing_review", "security_or_performance", "operation_feedback", "outcome"],
+      mustInclude: ["解いた課題", "担当範囲", "技術選定の理由", "設計判断とトレードオフ", "検証・テスト・レビュー", "結果"],
+      shouldInclude: ["代替案との比較", "性能・セキュリティ・保守性への配慮", "生成AIや自動化ツール利用時の検証方法", "リリース後の改善"],
+      followUpFocus: ["なぜその技術を選んだか", "捨てた選択肢とトレードオフ", "品質をどう担保したか", "AIや自動化の出力をどう検証したか", "運用後の改善につなげたか"]
     },
     failure: {
       intentLabel: "reflection_recovery",
@@ -1670,8 +2601,12 @@
     if (safeSettings.role) {
       addCoverageTopic(topics, createCoverageTopic("role_fit", "職種理解", "career", safeSettings.role + "で再現できる力"));
     }
-    if (safeSettings.interviewType === "technical") {
+    if (safeSettings.category === "development" || safeSettings.interviewType === "technical") {
       addCoverageTopic(topics, createCoverageTopic("technical_decision", "技術判断", "development", "技術選定、設計判断、検証方法"));
+      addCoverageTopic(topics, createCoverageTopic("architecture_tradeoff", "設計トレードオフ", "development", "アーキテクチャ、代替案、制約、捨てた選択肢"));
+      addCoverageTopic(topics, createCoverageTopic("quality_delivery", "品質とリリース", "development", "テスト、レビュー、CI、リリース前確認、運用後の改善"));
+      addCoverageTopic(topics, createCoverageTopic("ai_tooling_validation", "AI・自動化活用", "development", "生成AIや自動化ツールの利用範囲、検証、責任分界"));
+      addCoverageTopic(topics, createCoverageTopic("nonfunctional_awareness", "非機能要件", "development", "性能、セキュリティ、保守性、可観測性への配慮"));
     }
     if (safeSettings.interviewType === "research") {
       addCoverageTopic(topics, createCoverageTopic("research_logic", "研究の論理", "research", "研究目的、手法、検証、独自性"));
@@ -2408,13 +3343,9 @@
     return copy;
   }
 
-  function clearInterviewLogs() {
-    saveInterviewLogs([]);
-  }
-
-  function deleteInterviewLog(id) {
+  function deleteInterviewLog(id, accountId) {
     saveInterviewLogs(loadInterviewLogs().filter(function (log) {
-      return log.id !== id;
+      return log.id !== id || (accountId && log.accountId !== accountId);
     }));
   }
 
@@ -2644,7 +3575,10 @@
   }
 
   function renderImmediateFeedback(evaluation) {
-    setText("feedbackSummary", "回答を受け付けました。次の質問に進みます。");
+    var score = evaluation && typeof evaluation.score === "number" ? evaluation.score : null;
+    setText("feedbackSummary", score !== null
+      ? "回答を受け付けました（今回のスコア: " + score + "点）。次の質問を準備しています..."
+      : "回答を受け付けました。次の質問を準備しています...");
   }
 
   function appendTimelineEntry(question, answer, evaluation) {
@@ -2680,10 +3614,10 @@
       return;
     }
     setBusy(true, "最終フィードバックを作成中です...");
-    appState.finished = true;
     appState.interviewLog.finishedAt = new Date().toISOString();
     appState.interviewLog.finalFeedback = await getFinalFeedback(appState.interviewLog);
     appState.interviewLog = saveInterviewLog(appState.interviewLog);
+    appState.finished = true;
     renderFinalFeedback(appState.interviewLog.finalFeedback);
     setBusy(false);
     showView("feedbackView");
@@ -2802,20 +3736,220 @@
     });
   }
 
+  var HISTORY_FILTER_CATEGORY_ORDER = [
+    "self_pr",
+    "motivation",
+    "student_life",
+    "strength_weakness",
+    "research",
+    "development",
+    "team",
+    "failure",
+    "career",
+    "reverse_question"
+  ];
+
+  var HISTORY_SORT_OPTIONS = [
+    { value: "date_desc", label: "日付が新しい順" },
+    { value: "date_asc", label: "日付が古い順" },
+    { value: "score_desc", label: "点数が高い順" },
+    { value: "score_asc", label: "点数が低い順" }
+  ];
+
+  function getHistoryLogTimestamp(log) {
+    var value = log.savedAt || log.finishedAt || log.startedAt;
+    var date = value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+  }
+
+  function getHistoryLogScore(log) {
+    return log.finalFeedback && typeof log.finalFeedback.finalScore === "number" ?
+      log.finalFeedback.finalScore : -1;
+  }
+
+  function applyHistoryFilterAndSort(logs) {
+    var filter = appState.historyFilter || {};
+    var filtered = (logs || []).filter(function (log) {
+      if (filter.companyName && getLogCompanyName(log) !== filter.companyName) {
+        return false;
+      }
+      if (filter.category) {
+        var settings = log.settings || {};
+        if (normalizeCategory(settings.category) !== normalizeCategory(filter.category)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    var sort = filter.sort || "date_desc";
+    filtered.sort(function (a, b) {
+      if (sort === "date_asc") {
+        return getHistoryLogTimestamp(a) - getHistoryLogTimestamp(b);
+      }
+      if (sort === "score_desc") {
+        return getHistoryLogScore(b) - getHistoryLogScore(a);
+      }
+      if (sort === "score_asc") {
+        return getHistoryLogScore(a) - getHistoryLogScore(b);
+      }
+      return getHistoryLogTimestamp(b) - getHistoryLogTimestamp(a);
+    });
+
+    return filtered;
+  }
+
+  function updateHistoryCompanyFilterOptions(logs) {
+    var select = $("historyCompanyFilter");
+    if (!select) {
+      return;
+    }
+    var currentValue = (appState.historyFilter && appState.historyFilter.companyName) || "";
+    var names = [];
+    var seen = {};
+    (logs || []).forEach(function (log) {
+      var name = getLogCompanyName(log);
+      if (name && !seen[name]) {
+        seen[name] = true;
+        names.push(name);
+      }
+    });
+
+    var signature = names.join(" ");
+    if (select.dataset.optionsSignature !== signature) {
+      select.textContent = "";
+      var allOption = document.createElement("option");
+      allOption.value = "";
+      allOption.textContent = "すべての企業";
+      select.appendChild(allOption);
+      names.forEach(function (name) {
+        var option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+      });
+      select.dataset.optionsSignature = signature;
+    }
+
+    if (currentValue && names.indexOf(currentValue) !== -1) {
+      select.value = currentValue;
+    } else {
+      select.value = "";
+      if (currentValue) {
+        appState.historyFilter.companyName = "";
+      }
+    }
+  }
+
+  function ensureHistoryFilterBar(logs) {
+    var bar = $("historyFilterBar");
+
+    if (!bar) {
+      var listTitle = $("historyListTitle");
+      var list = $("historyList");
+      if (!listTitle || !list || !listTitle.parentNode) {
+        return;
+      }
+
+      bar = document.createElement("div");
+      bar.id = "historyFilterBar";
+      bar.className = "history-filter-bar";
+
+      var companyField = document.createElement("div");
+      companyField.className = "history-filter-field";
+      var companyLabel = document.createElement("label");
+      companyLabel.setAttribute("for", "historyCompanyFilter");
+      companyLabel.textContent = "企業";
+      var companySelect = document.createElement("select");
+      companySelect.id = "historyCompanyFilter";
+      companyField.appendChild(companyLabel);
+      companyField.appendChild(companySelect);
+
+      var categoryField = document.createElement("div");
+      categoryField.className = "history-filter-field";
+      var categoryLabel = document.createElement("label");
+      categoryLabel.setAttribute("for", "historyCategoryFilter");
+      categoryLabel.textContent = "カテゴリ";
+      var categorySelect = document.createElement("select");
+      categorySelect.id = "historyCategoryFilter";
+      var allCategoryOption = document.createElement("option");
+      allCategoryOption.value = "";
+      allCategoryOption.textContent = "すべてのカテゴリ";
+      categorySelect.appendChild(allCategoryOption);
+      HISTORY_FILTER_CATEGORY_ORDER.forEach(function (value) {
+        var option = document.createElement("option");
+        option.value = value;
+        option.textContent = formatCategoryLabel(value);
+        categorySelect.appendChild(option);
+      });
+      categoryField.appendChild(categoryLabel);
+      categoryField.appendChild(categorySelect);
+
+      var sortField = document.createElement("div");
+      sortField.className = "history-filter-field";
+      var sortLabel = document.createElement("label");
+      sortLabel.setAttribute("for", "historySortSelect");
+      sortLabel.textContent = "並び替え";
+      var sortSelect = document.createElement("select");
+      sortSelect.id = "historySortSelect";
+      HISTORY_SORT_OPTIONS.forEach(function (opt) {
+        var option = document.createElement("option");
+        option.value = opt.value;
+        option.textContent = opt.label;
+        sortSelect.appendChild(option);
+      });
+      sortField.appendChild(sortLabel);
+      sortField.appendChild(sortSelect);
+
+      bar.appendChild(companyField);
+      bar.appendChild(categoryField);
+      bar.appendChild(sortField);
+
+      listTitle.insertAdjacentElement("afterend", bar);
+
+      companySelect.addEventListener("change", function () {
+        appState.historyFilter.companyName = companySelect.value;
+        renderHistory();
+      });
+      categorySelect.addEventListener("change", function () {
+        appState.historyFilter.category = categorySelect.value;
+        renderHistory();
+      });
+      sortSelect.addEventListener("change", function () {
+        appState.historyFilter.sort = sortSelect.value;
+        renderHistory();
+      });
+    }
+
+    updateHistoryCompanyFilterOptions(logs);
+
+    var categorySelectEl = $("historyCategoryFilter");
+    if (categorySelectEl) {
+      categorySelectEl.value = (appState.historyFilter && appState.historyFilter.category) || "";
+    }
+    var sortSelectEl = $("historySortSelect");
+    if (sortSelectEl) {
+      sortSelectEl.value = (appState.historyFilter && appState.historyFilter.sort) || "date_desc";
+    }
+  }
+
   function renderHistory() {
-    var logs = loadInterviewLogs();
+    var logs = appState.activeAccountId ? getAccountInterviewLogs(appState.activeAccountId) : [];
     var list = $("historyList");
     var detail = $("historyDetail");
     appState.selectedHistoryId = null;
 
+    ensureHistoryFilterBar(logs);
+    var filteredLogs = applyHistoryFilterAndSort(logs);
+
     if (list) {
       list.textContent = "";
-      if (!logs.length) {
+      if (!filteredLogs.length) {
         var empty = document.createElement("p");
-        empty.textContent = "保存された面接ログはありません。";
+        empty.textContent = logs.length ? "条件に一致する履歴がありません。" : "保存された面接ログはありません。";
         list.appendChild(empty);
       }
-      logs.forEach(function (log) {
+      filteredLogs.forEach(function (log) {
         var button = document.createElement("button");
         var settings = log.settings || {};
         var score = log.finalFeedback ? log.finalFeedback.finalScore + "点" : "未評価";
@@ -2841,7 +3975,7 @@
       });
     }
     if (detail) {
-      detail.textContent = logs.length ? "履歴を選択してください。" : "";
+      detail.textContent = filteredLogs.length ? "履歴を選択してください。" : "";
     }
     showView("historyView");
   }
@@ -3011,6 +4145,36 @@
     ].join(" / ");
     detail.appendChild(meta);
 
+    var actions = document.createElement("div");
+    actions.className = "form-actions history-detail-actions";
+    var reuseButton = document.createElement("button");
+    reuseButton.type = "button";
+    reuseButton.className = "button button-secondary button-small";
+    reuseButton.dataset.action = "reuse-history-settings";
+    reuseButton.dataset.historyId = log && log.id ? log.id : "";
+    reuseButton.textContent = "同じ設定で再練習";
+    var copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "button button-secondary button-small";
+    copyButton.dataset.action = "copy-history-detail";
+    copyButton.dataset.historyId = log && log.id ? log.id : "";
+    copyButton.textContent = "詳細をコピー";
+    var exportButton = document.createElement("button");
+    exportButton.type = "button";
+    exportButton.className = "button button-secondary button-small";
+    exportButton.dataset.action = "export-history-json";
+    exportButton.dataset.historyId = log && log.id ? log.id : "";
+    exportButton.textContent = "JSONでエクスポート";
+    actions.appendChild(reuseButton);
+    actions.appendChild(copyButton);
+    actions.appendChild(exportButton);
+    detail.appendChild(actions);
+
+    var actionStatus = document.createElement("p");
+    actionStatus.id = "historyDetailActionStatus";
+    actionStatus.className = "history-detail-action-status";
+    detail.appendChild(actionStatus);
+
     if (sourceEsEntries.length) {
       var esBlock = document.createElement("section");
       esBlock.className = "history-detail-section";
@@ -3067,6 +4231,154 @@
     });
   }
 
+  function reuseHistorySettings(log) {
+    if (!log) {
+      return;
+    }
+    var settings = log.settings || {};
+    var company = settings.companyId ? findCompany(settings.companyId, appState.activeAccountId) : null;
+    if (company) {
+      setValue("setupCompanySelect", company.id);
+      appState.pendingSourceCompanyId = company.id;
+      setValue("companyInput", company.companyName || settings.company || "");
+      setValue("roleInput", company.role || settings.role || "");
+    } else {
+      setValue("setupCompanySelect", "");
+      appState.pendingSourceCompanyId = null;
+      setValue("companyInput", settings.company || "");
+      setValue("roleInput", settings.role || "");
+    }
+    setValue("interviewTypeSelect", settings.interviewType || DEFAULT_SETTINGS.interviewType);
+    setValue("targetTypeSelect", settings.targetType || DEFAULT_SETTINGS.targetType);
+    setValue("categorySelect", normalizeCategory(settings.category || DEFAULT_SETTINGS.category));
+    setValue("questionCountSelect", settings.questionCount || DEFAULT_SETTINGS.questionCount);
+    setValue("userProfileInput", settings.userProfile || "");
+    selectInterviewerType(settings.interviewerTypeMode === "random"
+      ? RANDOM_INTERVIEWER_TYPE_ID
+      : settings.interviewerTypeSelection || settings.interviewerType || DEFAULT_SETTINGS.interviewerType);
+    renderSetupCompanySelect();
+    setValue("setupCompanySelect", company ? company.id : "");
+    if (company) {
+      renderSourceEsPreview(company, getCompanyEsEntries(company.id, company.accountId));
+    } else {
+      renderSourceEsPreview(null, []);
+    }
+    showView("setupView");
+  }
+
+  function buildHistoryDetailText(log) {
+    if (!log) {
+      return "";
+    }
+    var settings = log.settings || {};
+    var entries = getLogEntries(log);
+    var lines = [];
+    lines.push(getLogCompanyName(log) + " / " + (settings.role || "職種未設定"));
+    lines.push("面接タイプ: " + formatInterviewTypeLabel(settings.interviewType));
+    lines.push("カテゴリ: " + formatCategoryLabel(settings.category));
+    lines.push("面接官: " + getInterviewerType(settings.interviewerType).label + (settings.interviewerTypeMode === "random" ? "（ランダム選択）" : ""));
+    lines.push("総合点: " + (log.finalFeedback ? log.finalFeedback.finalScore + "点" : "未評価"));
+    lines.push("日時: " + formatDate(log.savedAt || log.finishedAt || log.startedAt));
+    lines.push("");
+    var sourceEsEntries = getLogSourceEsEntries(log);
+    if (sourceEsEntries.length) {
+      lines.push("使用したES一覧");
+      sourceEsEntries.forEach(function (sourceEsEntry, index) {
+        lines.push("ES" + (index + 1) + " 設問: " + (sourceEsEntry.questionText || "未入力"));
+        lines.push("ES" + (index + 1) + " 回答: " + (sourceEsEntry.answerText || "未入力"));
+      });
+      lines.push("");
+    }
+    entries.forEach(function (entry) {
+      lines.push("Q" + entry.questionNumber + ". " + entry.question);
+      if (entry.topic && entry.topic.label) {
+        lines.push("テーマ: " + entry.topic.label);
+      }
+      lines.push("A. " + (entry.answer || ""));
+      lines.push("評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし"));
+      if (entry.evaluation && entry.evaluation.deepDiveQuestion) {
+        lines.push("深掘り質問: " + entry.evaluation.deepDiveQuestion);
+      }
+      if (entry.evaluation && entry.evaluation.followUpReason) {
+        lines.push("追加確認の理由: " + entry.evaluation.followUpReason);
+      }
+      lines.push("");
+    });
+    return lines.join("\n").replace(/\n+$/, "\n");
+  }
+
+  function copyHistoryDetailToClipboard(log) {
+    if (!log) {
+      return;
+    }
+    var text = buildHistoryDetailText(log);
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+      setText("historyDetailActionStatus", "このブラウザ・環境ではクリップボードへのコピーに対応していません。");
+      return;
+    }
+    navigator.clipboard.writeText(text).then(function () {
+      setText("historyDetailActionStatus", "履歴の詳細をクリップボードにコピーしました。");
+    }).catch(function (error) {
+      console.warn("Failed to copy history detail to clipboard:", error);
+      setText("historyDetailActionStatus", "コピーに失敗しました: " + (error && error.message ? error.message : "不明なエラー"));
+    });
+  }
+
+  function exportHistoryDetailAsJson(log) {
+    if (!log) {
+      return;
+    }
+    try {
+      var json = JSON.stringify(log, null, 2);
+      var blob = new Blob([json], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var anchor = document.createElement("a");
+      var rawName = getLogCompanyName(log) || log.id || "interview-log";
+      var safeName = String(rawName).replace(/[\\/:*?"<>|\s]+/g, "_").replace(/^_+|_+$/g, "") || "interview-log";
+      var dateSource = log.savedAt || log.finishedAt || log.startedAt;
+      var dateValue = dateSource ? new Date(dateSource) : new Date();
+      var datePart = Number.isNaN(dateValue.getTime()) ? "" : dateValue.toISOString().slice(0, 10);
+      anchor.href = url;
+      anchor.download = "interview-log-" + safeName + (datePart ? "-" + datePart : "") + ".json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setText("historyDetailActionStatus", "JSONファイルをダウンロードしました。");
+    } catch (error) {
+      console.warn("Failed to export history detail as JSON:", error);
+      setText("historyDetailActionStatus", "エクスポートに失敗しました: " + (error && error.message ? error.message : "不明なエラー"));
+    }
+  }
+
+  function handleHistoryDetailClick(event) {
+    var target = event && event.target && typeof event.target.closest === "function"
+      ? event.target.closest("[data-action]")
+      : null;
+    if (!target) {
+      return;
+    }
+    var historyId = target.dataset ? target.dataset.historyId : null;
+    if (!historyId) {
+      return;
+    }
+    var log = loadInterviewLogs().find(function (item) {
+      return item.id === historyId && item.accountId === appState.activeAccountId;
+    });
+    if (!log) {
+      setText("historyDetailActionStatus", "対象の履歴が見つかりませんでした。");
+      return;
+    }
+    var action = target.dataset.action;
+    if (action === "reuse-history-settings") {
+      reuseHistorySettings(log);
+    } else if (action === "copy-history-detail") {
+      copyHistoryDetailToClipboard(log);
+    } else if (action === "export-history-json") {
+      exportHistoryDetailAsJson(log);
+    }
+  }
+
   function formatDate(value) {
     if (!value) {
       return "日時未設定";
@@ -3092,7 +4404,17 @@
   }
 
   function switchAccount() {
+    if (cloudState.user && cloudState.service) {
+      signOutGoogle();
+      return;
+    }
     releaseAudioClips();
+    if (appState.editingCompanyId) {
+      cancelEditCompany();
+    }
+    if (appState.editingEsEntryId) {
+      resetEsEditingState();
+    }
     rememberActiveAccount(null);
     appState.selectedCompanyId = null;
     appState.pendingSourceCompanyId = null;
@@ -3102,7 +4424,22 @@
   }
 
   function clearHistory() {
-    clearInterviewLogs();
+    if (!appState.activeAccountId) {
+      return;
+    }
+    var logs = getAccountInterviewLogs(appState.activeAccountId);
+    if (!logs.length) {
+      return;
+    }
+    var confirmed = window.confirm("選択中アカウントの面接履歴をすべて削除します。この操作は元に戻せません。よろしいですか？");
+    if (!confirmed) {
+      return;
+    }
+    var activeAccountId = appState.activeAccountId;
+    var remainingLogs = loadInterviewLogs().filter(function (log) {
+      return log.accountId !== activeAccountId;
+    });
+    saveInterviewLogs(remainingLogs);
     appState.selectedHistoryId = null;
     renderHistory();
   }
@@ -3112,22 +4449,53 @@
       setText("historyDetail", "削除する履歴を一覧から選択してください。");
       return;
     }
-    deleteInterviewLog(appState.selectedHistoryId);
+    var targetLog = loadInterviewLogs().find(function (log) {
+      return log.id === appState.selectedHistoryId;
+    });
+    if (!targetLog || targetLog.accountId !== appState.activeAccountId) {
+      setText("historyDetail", "削除する履歴を一覧から選択してください。");
+      appState.selectedHistoryId = null;
+      return;
+    }
+    var companyLabel = getLogCompanyName(targetLog);
+    var confirmed = window.confirm("「" + companyLabel + "」の面接履歴を削除します。この操作は元に戻せません。よろしいですか？");
+    if (!confirmed) {
+      return;
+    }
+    deleteInterviewLog(appState.selectedHistoryId, appState.activeAccountId);
     appState.selectedHistoryId = null;
     renderHistory();
   }
 
   function handleAccountListClick(event) {
-    var target = event.target && event.target.closest ? event.target.closest("[data-action='select-account']") : null;
-    if (target && target.dataset.accountId) {
-      selectAccount(target.dataset.accountId);
+    var target = event.target && event.target.closest ? event.target.closest("[data-action]") : null;
+    if (!target || !target.dataset.accountId) {
+      return;
+    }
+    var accountId = target.dataset.accountId;
+    if (target.dataset.action === "select-account") {
+      selectAccount(accountId);
+    } else if (target.dataset.action === "edit-account") {
+      startEditAccount(accountId);
+    } else if (target.dataset.action === "delete-account") {
+      deleteAccountCascade(accountId);
     }
   }
 
   function handleCompanyListClick(event) {
-    var target = event.target && event.target.closest ? event.target.closest("[data-action='select-company']") : null;
-    if (target && target.dataset.companyId) {
-      selectCompany(target.dataset.companyId);
+    var target = event.target && event.target.closest ? event.target.closest("[data-action]") : null;
+    if (!target || !target.dataset.companyId) {
+      return;
+    }
+    var companyId = target.dataset.companyId;
+    if (target.dataset.action === "select-company") {
+      selectCompany(companyId);
+    } else if (target.dataset.action === "edit-company") {
+      startEditCompany(companyId);
+    } else if (target.dataset.action === "duplicate-company") {
+      duplicateCompany(companyId);
+    } else if (target.dataset.action === "delete-company") {
+      deleteCompany(companyId);
     }
   }
 
@@ -3136,8 +4504,15 @@
     if (!target || !target.dataset.esEntryId) {
       return;
     }
+    var entryId = target.dataset.esEntryId;
     if (target.dataset.action === "use-es-entry") {
-      useEsEntry(target.dataset.esEntryId);
+      useEsEntry(entryId);
+    } else if (target.dataset.action === "edit-es-entry") {
+      startEditEsEntry(entryId);
+    } else if (target.dataset.action === "duplicate-es-entry") {
+      duplicateEsEntry(entryId);
+    } else if (target.dataset.action === "delete-es-entry") {
+      deleteEsEntry(entryId);
     }
   }
 
@@ -3617,12 +4992,36 @@
     await stopAudioRecording();
   }
 
+  function confirmLeaveInterviewIfNeeded() {
+    if (!hasUnsavedInterviewProgress()) {
+      return true;
+    }
+    var confirmed = window.confirm("進行中の面接には保存されていない回答があります。移動すると内容は失われます。移動しますか？");
+    if (confirmed) {
+      appState.interviewLog = null;
+    }
+    return confirmed;
+  }
+
+  function guardedNavigation(handler) {
+    return function (event) {
+      if (!confirmLeaveInterviewIfNeeded()) {
+        if (event && typeof event.preventDefault === "function") {
+          event.preventDefault();
+        }
+        return;
+      }
+      handler(event);
+    };
+  }
+
   function bindEvents() {
     on("createAccountBtn", "click", createAccount);
     on("accountForm", "submit", createAccount);
     on("accountList", "click", handleAccountListClick);
     on("companyForm", "submit", saveCompanyFromForm);
     on("saveCompanyBtn", "click", saveCompanyFromForm);
+    on("cancelEditCompanyBtn", "click", cancelEditCompany);
     on("companyList", "click", handleCompanyListClick);
     on("esForm", "submit", saveEsFromForm);
     on("saveEsBtn", "click", saveEsFromForm);
@@ -3635,6 +5034,9 @@
     on("saveAiSettingsBtn", "click", saveAiSettingsFromForm);
     on("testAiConnectionBtn", "click", testAiConnection);
     on("clearAiSettingsBtn", "click", clearAiSettings);
+    on("googleSignInBtn", "click", signInWithGoogle);
+    on("googleSignOutBtn", "click", signOutGoogle);
+    on("migrateLocalDataBtn", "click", migrateLocalDataToCloud);
     on("startInterviewBtn", "click", startInterview);
     on("submitAnswerBtn", "click", submitAnswer);
     on("finishInterviewBtn", "click", finishInterview);
@@ -3643,14 +5045,15 @@
     on("toggleQuestionSpeechBtn", "click", toggleQuestionSpeech);
     on("startVoiceInputBtn", "click", startVoiceInput);
     on("stopVoiceInputBtn", "click", stopVoiceInput);
-    on("showWorkspaceBtn", "click", showWorkspace);
-    on("showSettingsBtn", "click", showSettings);
-    on("showHistoryBtn", "click", renderHistory);
-    on("backToSetupBtn", "click", restart);
-    on("switchAccountBtn", "click", switchAccount);
+    on("showWorkspaceBtn", "click", guardedNavigation(showWorkspace));
+    on("showSettingsBtn", "click", guardedNavigation(showSettings));
+    on("showHistoryBtn", "click", guardedNavigation(renderHistory));
+    on("backToSetupBtn", "click", guardedNavigation(restart));
+    on("switchAccountBtn", "click", guardedNavigation(switchAccount));
     on("restartBtn", "click", restart);
     on("clearHistoryBtn", "click", clearHistory);
     on("deleteHistoryItemBtn", "click", deleteSelectedHistory);
+    on("historyDetail", "click", handleHistoryDetailClick);
 
     var answerInput = $("answerInput");
     if (answerInput) {
@@ -3660,20 +5063,26 @@
         }
       });
     }
-    window.addEventListener("beforeunload", function () {
+    window.addEventListener("beforeunload", function (event) {
       stopQuestionSpeech();
       releaseAudioClips();
       stopVoiceMediaStream();
+      if (hasUnsavedInterviewProgress() || hasPendingCloudInterviewLogSave()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
     });
   }
 
   function init() {
+    captureLocalMigrationSnapshot();
     bindEvents();
     setupQuestionSpeech();
     setupVoiceInput();
     selectInterviewerType(getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType));
     renderAccounts();
     renderAiSettings();
+    initializeCloudIntegration();
     try {
       var storedAccountId = localStorage.getItem(ACTIVE_ACCOUNT_STORAGE_KEY);
       var hasStoredAccount = loadAccounts().some(function (account) {

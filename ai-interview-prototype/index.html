@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI面接練習</title>
   <link rel="stylesheet" href="./style.css">
+  <script src="./firebase-config.js"></script>
+  <script src="./firebase-cloud.js" type="module"></script>
   <script src="./script.js" defer></script>
 </head>
 <body>
@@ -29,6 +31,19 @@
         <h2 id="accountTitle">ローカルアカウント</h2>
       </div>
 
+      <section class="cloud-auth-panel" aria-labelledby="cloudAuthTitle">
+        <div>
+          <p class="panel-label">Google Sync</p>
+          <h3 id="cloudAuthTitle">Googleログインとクラウド保存</h3>
+          <p id="cloudSyncStatus" class="cloud-sync-status" aria-live="polite">Firebase設定を読み込み中です。</p>
+        </div>
+        <div class="cloud-auth-actions">
+          <button id="googleSignInBtn" class="button button-primary" type="button">Googleでログイン</button>
+          <button id="googleSignOutBtn" class="button button-secondary" type="button" hidden>ログアウト</button>
+          <button id="migrateLocalDataBtn" class="button button-ghost" type="button" hidden>この端末のデータをクラウドへ移行</button>
+        </div>
+      </section>
+
       <div class="account-layout">
         <form id="accountForm" class="account-form">
           <div class="field">
@@ -49,7 +64,7 @@
           <div id="accountList" class="stacked-list"></div>
         </section>
       </div>
-      <p id="googleAccountNote">データはこのブラウザの localStorage に保存されます。Google連携は未実装です。</p>
+      <p id="googleAccountNote">Firebase未設定時はこのブラウザの localStorage に保存されます。Googleログイン設定後はFirestoreへクラウド保存できます。</p>
     </section>
 
     <section id="settingsView" class="view-panel" aria-labelledby="settingsTitle" hidden>
@@ -69,7 +84,7 @@
         </div>
         <div class="field">
           <label for="openAiModelInput">モデル</label>
-          <input id="openAiModelInput" name="openAiModel" type="text" placeholder="gpt-4.1-mini">
+          <input id="openAiModelInput" name="openAiModel" type="text" placeholder="gpt-5.6">
         </div>
         <div class="field">
           <label for="aiModeSelect">AI利用</label>
@@ -126,6 +141,7 @@
             </div>
             <div class="form-actions">
               <button id="saveCompanyBtn" class="button button-primary" type="button">企業を保存</button>
+              <button id="cancelEditCompanyBtn" class="button button-ghost button-small" type="button" hidden>編集をキャンセル</button>
             </div>
           </form>
 

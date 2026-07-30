@@ -22,6 +22,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
@@ -234,6 +238,46 @@ h3 {
   padding: 18px;
 }
 
+.cloud-auth-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cloud-auth-panel h3 {
+  margin: 4px 0 8px;
+}
+
+.cloud-auth-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cloud-sync-status {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.cloud-auth-panel.is-connected {
+  border-color: rgba(20, 108, 95, 0.42);
+  background: var(--primary-soft);
+}
+
+.cloud-auth-panel.is-error {
+  border-color: rgba(184, 52, 52, 0.42);
+  background: var(--danger-soft);
+}
+
 .compact-form {
   display: grid;
   gap: 14px;
@@ -294,7 +338,6 @@ h3 {
 }
 
 .list-item,
-.account-item,
 .company-item,
 .es-entry-item {
   display: grid;
@@ -308,9 +351,55 @@ h3 {
   text-align: left;
 }
 
-.company-item,
+.es-entry-item.is-editing {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: inset 4px 0 0 var(--primary);
+}
+
 .account-item {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.account-item-select {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
+}
+
+.company-card-select {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.company-card-select:hover .company-card-title,
+.company-item.is-selected .company-card-title {
+  color: var(--primary-dark);
 }
 
 .company-card-title,
@@ -334,13 +423,22 @@ h3 {
 }
 
 .company-item:hover,
-.account-item:hover,
 .list-item:hover {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
 
-.company-item.is-selected,
+.company-item.is-selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: inset 4px 0 0 var(--primary);
+}
+
+.account-item:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
 .account-item.is-selected {
   border-color: var(--primary);
   background: var(--primary-soft);
@@ -912,6 +1010,29 @@ textarea:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.history-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.history-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-filter-field label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.history-filter-field select {
+  min-height: 40px;
+}
+
 .history-list {
   display: grid;
   gap: 10px;
@@ -995,17 +1116,20 @@ textarea:focus {
 
 @media (max-width: 860px) {
   .app-header,
+  .cloud-auth-panel,
   .compact-heading {
     align-items: stretch;
     flex-direction: column;
   }
 
   .header-actions,
+  .cloud-auth-actions,
   .form-actions {
     width: 100%;
   }
 
   .header-actions .button,
+  .cloud-auth-actions .button,
   .form-actions .button {
     flex: 1 1 160px;
   }
@@ -1059,6 +1183,10 @@ textarea:focus {
 
   .button {
     width: 100%;
+  }
+
+  .history-filter-bar {
+    grid-template-columns: 1fr;
   }
 
   .interviewer-avatar-grid {
