@@ -82,7 +82,7 @@ async function handleOpenAiProxy(request, response) {
   }
 
   const apiKey = typeof payload.apiKey === "string" ? payload.apiKey.trim() : "";
-  const model = typeof payload.model === "string" && payload.model.trim() ? payload.model.trim() : "gpt-4.1-mini";
+  const model = typeof payload.model === "string" && payload.model.trim() ? payload.model.trim() : "gpt-5.6";
   const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
   const schema = payload.schema && typeof payload.schema === "object" ? payload.schema : null;
   const task = typeof payload.task === "string" && payload.task.trim() ? payload.task.trim() : "ai_task";

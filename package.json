@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check ai-interview-prototype/script.js && node --check server.mjs"
+    "check": "node --check ai-interview-prototype/script.js && node --check ai-interview-prototype/firebase-cloud.js && node --check ai-interview-prototype/firebase-config.js && node --check server.mjs",
+    "firebase:deploy:rules": "firebase deploy --only firestore:rules"
   },
   "engines": {
     "node": ">=18"

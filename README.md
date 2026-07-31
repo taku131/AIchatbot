@@ -1,6 +1,6 @@
 # AI Interview Chatbot
 
-AI 面接練習用の Web アプリプロトタイプです。OpenAI API を任意で使えます。アカウント、企業、ES、面接ログなどのアプリ内データは、現状ブラウザの `localStorage` に保存します。
+AI 面接練習用の Web アプリプロトタイプです。OpenAI API を任意で使えます。アカウント、企業、ES、面接ログなどのアプリ内データは、標準ではブラウザの `localStorage` に保存します。Firebase設定を追加すると、GoogleログインとFirestoreクラウド保存を使えます。
 
 ## 起動方法
 
@@ -47,6 +47,7 @@ AI面接官タイプで `ランダム` を選ぶと、開始時に面接官タ�
 - `localStorage` によるアカウント、企業、ES、面接ログ、選択中アカウントの保存
 - OpenAI APIキー設定画面、接続テスト、ローカルサーバー経由のOpenAI呼び出し
 - OpenAIを使った面接質問生成、回答評価、深掘り質問生成、最終フィードバック生成
+- Googleログイン、Firestoreクラウド保存、localStorageからFirestoreへの移行
 - 過去の質問・回答・不足点を使った重複質問の抑制
 - 議題カバレッジ管理による、未確認テーマ優先の質問生成
 - 回答が不十分な場合だけ理由を示して深掘りする次問制御
@@ -61,10 +62,13 @@ AI面接官タイプで `ランダム` を選ぶと、開始時に面接官タ�
 
 ## 未実装
 
-- Google Sign-In、Firebase、クラウド同期
 - PDF、Word、画像、履歴書などのファイル取込
-- 本番向け認証、DB、APIキー保護
+- 本番向けの管理者運用、監視、自動バックアップ
 - 自動テスト
+
+## Google連携
+
+GoogleログインとFirestore保存を使う場合は、[docs/google-firebase-setup.md](docs/google-firebase-setup.md) に沿ってFirebaseプロジェクトを作成し、`ai-interview-prototype/firebase-config.js` にFirebase Web app configを設定してください。未設定のままでも、従来どおりlocalStorageのみで利用できます。
 
 ## 質問生成の方針
 
