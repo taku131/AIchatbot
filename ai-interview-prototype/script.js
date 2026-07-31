@@ -58,6 +58,46 @@
     default: "その他"
   };
 
+  var ES_IMPORT_CATEGORY_OPTIONS = [
+    "self_pr",
+    "motivation",
+    "student_life",
+    "strength_weakness",
+    "research",
+    "development",
+    "team",
+    "failure",
+    "career",
+    "reverse_question"
+  ];
+
+  // 設問文に含まれるキーワードから、一括取込プレビューの初期カテゴリを推測する。
+  // あくまで初期値のヒントであり、プレビュー画面でユーザーが必ず選び直せる。
+  var ES_IMPORT_CATEGORY_KEYWORDS = [
+    { category: "motivation", keywords: ["志望動機", "志望理由", "なぜ当社", "なぜ弊社"] },
+    { category: "student_life", keywords: ["学生時代に力を入れた", "ガクチカ"] },
+    { category: "research", keywords: ["研究"] },
+    { category: "development", keywords: ["開発経験", "エンジニア", "プログラ"] },
+    { category: "team", keywords: ["チーム", "チームワーク"] },
+    { category: "failure", keywords: ["失敗", "挫折"] },
+    { category: "strength_weakness", keywords: ["強み", "弱み", "長所", "短所"] },
+    { category: "career", keywords: ["キャリア", "将来のビジョン", "5年後", "10年後"] },
+    { category: "reverse_question", keywords: ["逆質問", "質問はありますか"] }
+  ];
+
+  function guessEsImportCategory(questionText) {
+    var text = String(questionText || "");
+    for (var i = 0; i < ES_IMPORT_CATEGORY_KEYWORDS.length; i++) {
+      var rule = ES_IMPORT_CATEGORY_KEYWORDS[i];
+      for (var j = 0; j < rule.keywords.length; j++) {
+        if (text.indexOf(rule.keywords[j]) !== -1) {
+          return rule.category;
+        }
+      }
+    }
+    return "self_pr";
+  }
+
   var STATUS_LABELS = {
     draft: "下書き",
     reviewing: "推敲中",
@@ -1786,6 +1826,222 @@
     renderSetupCompanySelect();
   }
 
+  async function handleEsImportAnalyze() {
+    var accountId = appState.activeAccountId;
+    var companyId = appState.selectedCompanyId;
+    if (!accountId || !companyId) {
+      setText("esImportStatus", "先にアカウントと企業を選択してください");
+      return;
+    }
+
+    var rawText = getRawValue("esImportRawText", "").trim();
+    if (!rawText) {
+      setText("esImportStatus", "貼り付けるテキストを入力してください");
+      return;
+    }
+
+    var analyzeButton = $("esImportAnalyzeBtn");
+    if (analyzeButton) {
+      analyzeButton.disabled = true;
+    }
+    setText("esImportStatus", "分割中です...");
+
+    var pairs = [];
+    try {
+      var aiSettings = loadAiSettings();
+      if (isOpenAiEnabled(aiSettings)) {
+        try {
+          pairs = await getEsImportSplit(rawText);
+          if (pairs.length) {
+            setText("esImportStatus", "AIで分割しました（" + pairs.length + "件）");
+          } else {
+            // AI呼び出し自体は成功したが1件も抽出できなかった場合も、
+            // テキストに対しては実質的な分割失敗として簡易分割にフォールバックする。
+            pairs = splitEsTextHeuristically(rawText);
+            setText("esImportStatus", "AIでは分割できなかったため簡易分割を使用しました");
+          }
+        } catch (error) {
+          pairs = splitEsTextHeuristically(rawText);
+          setText("esImportStatus", "AI分割に失敗したため簡易分割を使用しました: " + (error && error.message ? error.message : String(error)));
+        }
+      } else {
+        pairs = splitEsTextHeuristically(rawText);
+        setText("esImportStatus", "OpenAI未設定のため簡易分割を使用しました");
+      }
+    } finally {
+      if (analyzeButton) {
+        analyzeButton.disabled = false;
+      }
+    }
+
+    if (!pairs || !pairs.length) {
+      setText("esImportStatus", "テキストから設問・回答を検出できませんでした");
+      pairs = [];
+    }
+
+    renderEsImportPreview(pairs, accountId, companyId);
+  }
+
+  function renderEsImportPreview(pairs, accountId, companyId) {
+    var list = $("esImportPreviewList");
+    if (!list) {
+      return;
+    }
+    list.textContent = "";
+    // 分析を実行した時点のアカウント・企業を記録しておき、保存時に選択が
+    // 変わっていないか確認できるようにする（分割後にユーザーが企業を切り替えて
+    // 誤って別企業にESを保存してしまうことを防ぐ）。
+    list.dataset.importAccountId = accountId || "";
+    list.dataset.importCompanyId = companyId || "";
+
+    (pairs || []).forEach(function (pair, index) {
+      var item = document.createElement("article");
+      item.className = "es-import-preview-item";
+      item.dataset.importIndex = String(index);
+
+      var headerRow = document.createElement("label");
+      headerRow.className = "es-import-preview-checkbox-row";
+      var checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "es-import-preview-checkbox";
+      checkbox.checked = true;
+      headerRow.appendChild(checkbox);
+      var headerText = document.createElement("span");
+      headerText.textContent = "この項目を保存する";
+      headerRow.appendChild(headerText);
+      item.appendChild(headerRow);
+
+      var questionField = document.createElement("div");
+      questionField.className = "field";
+      var questionLabel = document.createElement("label");
+      questionLabel.textContent = "設問";
+      var questionInput = document.createElement("textarea");
+      questionInput.className = "es-import-preview-question";
+      questionInput.rows = 2;
+      questionInput.value = pair.questionText || "";
+      questionField.appendChild(questionLabel);
+      questionField.appendChild(questionInput);
+      item.appendChild(questionField);
+
+      var answerField = document.createElement("div");
+      answerField.className = "field";
+      var answerLabel = document.createElement("label");
+      answerLabel.textContent = "回答";
+      var answerInput = document.createElement("textarea");
+      answerInput.className = "es-import-preview-answer";
+      answerInput.rows = 4;
+      answerInput.value = pair.answerText || "";
+      answerField.appendChild(answerLabel);
+      answerField.appendChild(answerInput);
+      item.appendChild(answerField);
+
+      var categoryField = document.createElement("div");
+      categoryField.className = "field";
+      var categoryLabel = document.createElement("label");
+      categoryLabel.textContent = "カテゴリ";
+      var categorySelect = document.createElement("select");
+      categorySelect.className = "es-import-preview-category";
+      ES_IMPORT_CATEGORY_OPTIONS.forEach(function (categoryValue) {
+        var option = document.createElement("option");
+        option.value = categoryValue;
+        option.textContent = CATEGORY_LABELS[categoryValue] || categoryValue;
+        categorySelect.appendChild(option);
+      });
+      categorySelect.value = guessEsImportCategory(pair.questionText);
+      categoryField.appendChild(categoryLabel);
+      categoryField.appendChild(categorySelect);
+      item.appendChild(categoryField);
+
+      list.appendChild(item);
+    });
+
+    if (pairs && pairs.length) {
+      var saveButton = document.createElement("button");
+      saveButton.id = "esImportSaveSelectedBtn";
+      saveButton.type = "button";
+      saveButton.className = "button button-primary";
+      saveButton.textContent = "選択した項目を保存";
+      saveButton.addEventListener("click", saveSelectedEsImportPairs);
+      list.appendChild(saveButton);
+    }
+  }
+
+  function saveSelectedEsImportPairs() {
+    var accountId = appState.activeAccountId;
+    var companyId = appState.selectedCompanyId;
+    if (!accountId || !companyId) {
+      setText("esImportStatus", "先にアカウントと企業を選択してください");
+      return;
+    }
+
+    var list = $("esImportPreviewList");
+    if (!list) {
+      return;
+    }
+    if (list.dataset.importAccountId !== accountId || list.dataset.importCompanyId !== companyId) {
+      setText("esImportStatus", "分析後にアカウントまたは企業が切り替わったため保存を中止しました。もう一度「分割する」を実行してください。");
+      return;
+    }
+
+    var items = Array.prototype.slice.call(list.querySelectorAll(".es-import-preview-item"));
+    var timestamp = nowIso();
+    var entries = loadEsEntries();
+    var savedCount = 0;
+    var skippedCount = 0;
+
+    items.forEach(function (item) {
+      var checkbox = item.querySelector(".es-import-preview-checkbox");
+      if (!checkbox || !checkbox.checked) {
+        return;
+      }
+      var questionInput = item.querySelector(".es-import-preview-question");
+      var answerInput = item.querySelector(".es-import-preview-answer");
+      var categorySelect = item.querySelector(".es-import-preview-category");
+      var questionText = questionInput ? questionInput.value.trim() : "";
+      var answerText = answerInput ? answerInput.value.trim() : "";
+      if (!questionText || !answerText) {
+        skippedCount += 1;
+        return;
+      }
+      var entry = {
+        id: makeId("es"),
+        accountId: accountId,
+        companyId: companyId,
+        questionText: questionText,
+        answerText: answerText,
+        maxChars: null,
+        category: normalizeCategory(categorySelect ? categorySelect.value : DEFAULT_SETTINGS.category),
+        status: "draft",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      entries.unshift(entry);
+      savedCount += 1;
+    });
+
+    if (savedCount > 0) {
+      saveEsEntries(entries);
+    }
+
+    var statusMessage;
+    if (savedCount === 0) {
+      statusMessage = "保存対象が選択されていないか、設問・回答が空欄のため保存できませんでした。";
+    } else {
+      statusMessage = savedCount + "件のESを保存しました。";
+      if (skippedCount > 0) {
+        statusMessage += "（設問または回答が空欄のため" + skippedCount + "件はスキップしました）";
+      }
+    }
+    setText("esImportStatus", statusMessage);
+
+    if (savedCount > 0) {
+      setValue("esImportRawText", "");
+      list.textContent = "";
+      renderEsEntries();
+      renderSetupCompanySelect();
+    }
+  }
+
   function updateEsCharCount() {
     var answer = getRawValue("esAnswerInput", "");
     var maxChars = parseInt(getValue("esMaxCharsInput", ""), 10);
@@ -2157,6 +2413,12 @@
       deepDiveQuestions: stringArraySchema(),
       revisionDirection: { type: "string" },
       nextPracticeList: stringArraySchema()
+    }),
+    es_import_split: jsonSchema({
+      pairs: objectArraySchema({
+        questionText: { type: "string" },
+        answerText: { type: "string" }
+      })
     })
   };
 
@@ -2183,6 +2445,105 @@
       throw new Error(data.error || "OpenAI API request failed");
     }
     return data.result;
+  }
+
+  // ES/履歴書のテキストをAIで設問・回答ペアに分割する。
+  // rawTextが空白のみの場合はAI呼び出しを行わず空配列を返す。
+  // callOpenAiが例外を投げた場合はそのまま呼び出し元へ伝播させる
+  // （呼び出し元でsplitEsTextHeuristically等のフォールバックに切り替える設計のため）。
+  async function getEsImportSplit(rawText) {
+    var text = String(rawText || "").trim();
+    if (!text) {
+      return [];
+    }
+    var result = await callOpenAi(
+      "es_import_split",
+      [
+        "以下のテキストは、就活生が入力した履歴書またはES（エントリーシート）の文章です。",
+        "このテキストを「設問」と「回答」のペアに分割してください。",
+        "設問が明示されていない場合は、内容から適切な見出し（例: 自己PR、学生時代に力を入れたこと、志望動機など）を推測してquestionTextにしてください。",
+        "回答本文(answerText)は要約や言い換えをせず、元のテキストをできるだけそのまま使ってください。",
+        "テキスト:",
+        text
+      ].join("\n"),
+      schemas.es_import_split
+    );
+    var pairs = result && Array.isArray(result.pairs) ? result.pairs : [];
+    return pairs
+      .map(function (pair) {
+        var questionText = typeof (pair && pair.questionText) === "string" ? pair.questionText : "";
+        var answerText = typeof (pair && pair.answerText) === "string" ? pair.answerText : "";
+        return { questionText: questionText, answerText: answerText };
+      })
+      .filter(function (pair) {
+        return pair.questionText !== "" || pair.answerText !== "";
+      });
+  }
+
+  // ES/履歴書のテキストを見出しパターンの正規表現で機械的に分割する簡易フォールバック。
+  // AIによる分割（getEsImportSplit）に比べて精度が低く、あくまでAPI未設定時などの代替手段。
+  function splitEsTextHeuristically(rawText) {
+    var text = String(rawText || "").trim();
+    if (!text) {
+      return [];
+    }
+    var lines = String(rawText || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    // 【】/[] は閉じたラベルなので、同じ行に続く文章は回答本文の書き出しとして扱う
+    // （例:「【自己PR】私は…」→ questionText="自己PR", answerText="私は…"）。
+    var bracketHeadingPattern = /^\s*(?:【([^】]+)】|\[([^\]]+)\])\s*(.*)$/;
+    // 「Q1.」「設問1」「質問」「第N問」やビュレット記号（■▼◆●◇）は、
+    // 設問文そのものが同じ行に続くことが多いため、行全体を見出しとして扱う
+    // （番号と本文を機械的に分離すると設問文の先頭が欠けてしまうため）。
+    // 単純な箇条書き記号（・, -, *, 数字.のみ 等）は見出しとして扱わないよう除外する。
+    var prefixHeadingPattern = /^\s*(?:Q\s*\.?\s*\d*\.?|設問\s*\d*\s*[:：.。]?|質問\s*\d*\s*[:：.。]?|■\s*.+|▼\s*.+|◆\s*.+|●\s*.+|◇\s*.+|第\s*\d+\s*問\s*[:：.。]?)\s*(.*)$/;
+    var entries = [];
+    var current = null;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var bracketMatch = line.match(bracketHeadingPattern);
+      if (bracketMatch) {
+        if (current) {
+          entries.push(current);
+        }
+        var bracketLabel = (bracketMatch[1] || bracketMatch[2] || "").trim();
+        var inlineBody = (bracketMatch[3] || "").trim();
+        current = { questionText: bracketLabel, answerText: inlineBody };
+        continue;
+      }
+      var prefixMatch = line.match(prefixHeadingPattern);
+      if (prefixMatch) {
+        if (current) {
+          entries.push(current);
+        }
+        var heading = line.trim();
+        // 見出し記号を取り除いて自然な文言にする。
+        heading = heading
+          .replace(/^Q\s*\.?\s*\d*\.?\s*/i, "")
+          .replace(/^設問\s*\d*\s*[:：.。]?\s*/, "")
+          .replace(/^質問\s*\d*\s*[:：.。]?\s*/, "")
+          .replace(/^第\s*\d+\s*問\s*[:：.。]?\s*/, "")
+          .replace(/^[■▼◆●◇]\s*/, "")
+          .trim();
+        current = { questionText: heading, answerText: "" };
+        continue;
+      }
+      if (current) {
+        current.answerText = current.answerText ? current.answerText + "\n" + line : line;
+      }
+    }
+    if (current) {
+      entries.push(current);
+    }
+    if (!entries.length) {
+      return [{ questionText: "", answerText: text }];
+    }
+    return entries
+      .map(function (entry) {
+        return { questionText: entry.questionText, answerText: entry.answerText.trim() };
+      })
+      .filter(function (entry) {
+        return entry.answerText !== "";
+      });
   }
 
   function buildAiContext(settings) {
@@ -5377,6 +5738,7 @@
     on("esAnswerInput", "input", updateEsCharCount);
     on("esMaxCharsInput", "input", updateEsCharCount);
     on("esEntryList", "click", handleEsEntryListClick);
+    on("esImportAnalyzeBtn", "click", handleEsImportAnalyze);
     on("setupCompanySelect", "change", handleSetupCompanySelectChange);
     on("interviewerAvatarGrid", "click", handleInterviewerAvatarClick);
     on("interviewerAvatarGrid", "keydown", handleInterviewerAvatarKeydown);

@@ -202,6 +202,17 @@
             </div>
           </form>
 
+          <div class="list-block" id="esImportBlock">
+            <h3>テキストから一括取込</h3>
+            <p class="field-help">履歴書やESの文章をそのまま貼り付けると、設問と回答のペアに自動で分割します。OpenAI APIキー未設定時は簡易的な分割になります。</p>
+            <textarea id="esImportRawText" rows="6" placeholder="ここに履歴書やESの文章を貼り付けてください。"></textarea>
+            <div class="form-actions">
+              <button id="esImportAnalyzeBtn" class="button button-secondary" type="button">分割する</button>
+            </div>
+            <div id="esImportStatus" class="inline-feedback" aria-live="polite"></div>
+            <div id="esImportPreviewList" class="es-import-preview-list"></div>
+          </div>
+
           <div class="list-block">
             <h3>選択中企業のES</h3>
             <div id="esEntryList" class="stacked-list es-entry-list"></div>

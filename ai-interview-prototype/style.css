@@ -357,6 +357,41 @@ h3 {
   box-shadow: inset 4px 0 0 var(--primary);
 }
 
+.es-import-preview-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.es-import-preview-item {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.es-import-preview-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.es-import-preview-item textarea,
+.es-import-preview-item select {
+  width: 100%;
+}
+
+#esImportSaveSelectedBtn {
+  justify-self: start;
+}
+
 .account-item {
   display: grid;
   gap: 8px;
