@@ -982,6 +982,15 @@ textarea:focus {
   line-height: 1.55;
 }
 
+.speech-metrics-summary {
+  display: grid;
+  gap: 6px;
+}
+
+.speech-metrics-summary p {
+  margin: 0;
+}
+
 .audio-review-list {
   display: grid;
   gap: 12px;
@@ -1031,6 +1040,79 @@ textarea:focus {
 
 .history-filter-field select {
   min-height: 40px;
+}
+
+.history-score-chart {
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.history-score-chart-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.history-score-chart-note {
+  margin: -4px 0 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.history-score-chart-body {
+  display: block;
+}
+
+.history-score-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.history-score-chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.history-score-chart-axis {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.history-score-chart-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.history-score-chart-line {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.history-score-chart-point {
+  fill: var(--primary);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.history-score-chart-point:hover,
+.history-score-chart-point:focus {
+  fill: var(--primary-dark);
+  outline: none;
+}
+
+.history-score-chart-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .history-list {

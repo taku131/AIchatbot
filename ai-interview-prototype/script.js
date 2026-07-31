@@ -3487,6 +3487,116 @@
     };
   }
 
+  // フィラーワード（つなぎ言葉）辞書。
+  // 日本語には英語のような明確な単語区切りがなく、特に「あの」「その」は
+  // 指示語（例:「あの人」「その資料」）としても使われるため、テキストの
+  // 単純な文字列マッチングだけでは意味的に正確な検出はできない。
+  // ここでは面接の発話で頻出する代表的なフィラーに絞り込み、
+  // 明らかな過検出を避けることを優先した簡易実装としている。
+  // （完璧な自然言語解析ではなく、あくまで出現回数の目安を示すもの）
+  var FILLER_WORDS = [
+    "えーと",
+    "えっと",
+    "ええと",
+    "あのー",
+    "そのー",
+    "まあ",
+    "なんか",
+    "あー",
+    "うーんと",
+    "うーん"
+  ];
+  // 「あの」「その」は単独では「あの人」「その資料」のような通常の指示語と
+  // 見分けがつかず誤検出が多くなるため、辞書からは外し、長音を伴う
+  // 「あのー」「そのー」（明確につなぎ言葉として使われる形）のみを対象にしている。
+
+  function escapeFillerWordRegExp(word) {
+    return word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function countFillerWords(text) {
+    if (!text) {
+      return { total: 0, breakdown: [] };
+    }
+    var source = String(text);
+    // 「うーんと」は「うーん」を部分文字列として含む。単純に短い語も
+    // 独立してカウントしたり、マッチ箇所を文字列から取り除いてから次の語を
+    // 探したりすると、削除によって残った文字同士がたまたま連結して別の
+    // フィラーワードに見えてしまう（意図しない誤検出）ことがある。
+    // そのため、元のテキスト上での出現位置(range)を長い語から優先的に
+    // 確保し、既に確保された範囲と重なる短い語の出現は数えない、という
+    // 非重複マッチングを行う。
+    var wordsByLengthDesc = FILLER_WORDS.slice().sort(function (a, b) {
+      return b.length - a.length;
+    });
+    var claimed = new Array(source.length).fill(false);
+    var counts = {};
+    wordsByLengthDesc.forEach(function (word) {
+      var pattern = new RegExp(escapeFillerWordRegExp(word), "g");
+      var match;
+      var count = 0;
+      while ((match = pattern.exec(source)) !== null) {
+        var start = match.index;
+        var end = start + word.length;
+        var overlaps = false;
+        for (var i = start; i < end; i += 1) {
+          if (claimed[i]) {
+            overlaps = true;
+            break;
+          }
+        }
+        if (!overlaps) {
+          for (var j = start; j < end; j += 1) {
+            claimed[j] = true;
+          }
+          count += 1;
+        }
+      }
+      counts[word] = count;
+    });
+    var breakdown = FILLER_WORDS.filter(function (word) {
+      return counts[word] > 0;
+    }).map(function (word) {
+      return { word: word, count: counts[word] };
+    }).sort(function (a, b) {
+      return b.count - a.count;
+    });
+    var total = breakdown.reduce(function (sum, item) {
+      return sum + item.count;
+    }, 0);
+    return { total: total, breakdown: breakdown };
+  }
+
+  function calculateSpeakingPace(text, durationMs) {
+    if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) {
+      return null;
+    }
+    var minutes = durationMs / 60000;
+    if (!(minutes > 0)) {
+      return null;
+    }
+    var charCount = text ? String(text).length : 0;
+    // 日本語は英語のような単語の分かち書きがないため、単語数ではなく
+    // 「1分あたりの文字数」を話速の指標として用いる。
+    return Math.round(charCount / minutes);
+  }
+
+  function analyzeEntrySpeech(entry) {
+    var text = entry && entry.transcript && entry.transcript.text ? entry.transcript.text : ((entry && entry.answer) || "");
+    var fillerWords = countFillerWords(text);
+    var durationMs = entry && entry.audio ? entry.audio.durationMs : undefined;
+    var paceCharsPerMinute = calculateSpeakingPace(text, durationMs);
+    return {
+      fillerWords: fillerWords,
+      paceCharsPerMinute: paceCharsPerMinute,
+      // 集計側でセッション全体の話速を「総文字数 / 総録音時間」として
+      // 正しく重み付けできるよう、パース済みの元データも返しておく。
+      charCount: paceCharsPerMinute !== null ? String(text).length : 0,
+      durationMs: paceCharsPerMinute !== null ? durationMs : 0,
+      usedVoiceInput: Boolean(entry && entry.answerInputMode === "voice")
+    };
+  }
+
   async function submitAnswer() {
     if (!appState.interviewLog || appState.finished || appState.isBusy) {
       return;
@@ -3634,7 +3744,75 @@
     appendListItems("deepDiveList", feedback.deepDiveQuestions);
     setText("revisionDirection", feedback.revisionDirection);
     appendListItems("nextPracticeList", feedback.nextPracticeList);
+    renderSpeechMetricsSummary();
     renderAudioReview();
+  }
+
+  function renderSpeechMetricsSummary() {
+    var container = $("speechMetricsSummary");
+    if (!container) {
+      return;
+    }
+    container.textContent = "";
+    var entries = appState.interviewLog && Array.isArray(appState.interviewLog.entries) ? appState.interviewLog.entries : [];
+    if (!entries.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "分析対象の回答がありません。";
+      container.appendChild(empty);
+      return;
+    }
+
+    var totalFillerCount = 0;
+    var fillerWordTotals = {};
+    var totalPaceCharCount = 0;
+    var totalPaceDurationMs = 0;
+    var usedVoiceInput = false;
+
+    entries.forEach(function (entry) {
+      var analysis = analyzeEntrySpeech(entry);
+      totalFillerCount += analysis.fillerWords.total;
+      analysis.fillerWords.breakdown.forEach(function (item) {
+        fillerWordTotals[item.word] = (fillerWordTotals[item.word] || 0) + item.count;
+      });
+      if (analysis.usedVoiceInput) {
+        usedVoiceInput = true;
+      }
+      if (analysis.paceCharsPerMinute !== null) {
+        totalPaceCharCount += analysis.charCount;
+        totalPaceDurationMs += analysis.durationMs;
+      }
+    });
+
+    var topFillerWords = Object.keys(fillerWordTotals).map(function (word) {
+      return { word: word, count: fillerWordTotals[word] };
+    }).sort(function (a, b) {
+      return b.count - a.count;
+    }).slice(0, 5);
+
+    var fillerSummary = document.createElement("p");
+    fillerSummary.className = "item-meta";
+    fillerSummary.textContent = "フィラーワード合計: " + totalFillerCount + "回" +
+      (topFillerWords.length
+        ? "（" + topFillerWords.map(function (item) {
+          return item.word + "×" + item.count;
+        }).join(", ") + "）"
+        : "");
+    container.appendChild(fillerSummary);
+
+    var paceSummary = document.createElement("p");
+    paceSummary.className = "item-meta";
+    if (totalPaceDurationMs > 0) {
+      // 各回答ごとの「文字/分」を単純平均すると、短い回答と長い回答が
+      // 同じ重みになり歪むため、総文字数 ÷ 総録音時間で計算する。
+      var averagePace = Math.round(totalPaceCharCount / (totalPaceDurationMs / 60000));
+      paceSummary.textContent = "平均話速（音声入力の回答のみ対象）: " + averagePace + "文字/分";
+    } else if (usedVoiceInput) {
+      paceSummary.textContent = "音声入力はありましたが、録音時間を計測できなかったため話速は算出できませんでした。";
+    } else {
+      paceSummary.textContent = "このセッションでは音声入力が使われなかったため話速は計測されていません。";
+    }
+    container.appendChild(paceSummary);
   }
 
   function formatDuration(ms) {
@@ -3933,6 +4111,160 @@
     }
   }
 
+  function ensureHistoryScoreChart() {
+    var chart = $("historyScoreChart");
+    if (chart) {
+      return;
+    }
+
+    var anchor = $("historyFilterBar") || $("historyListTitle");
+    var list = $("historyList");
+    if (!anchor || !list || !anchor.parentNode) {
+      return;
+    }
+
+    chart = document.createElement("section");
+    chart.id = "historyScoreChart";
+    chart.className = "history-score-chart";
+    chart.setAttribute("aria-label", "スコア推移");
+
+    var heading = document.createElement("h4");
+    heading.className = "history-score-chart-title";
+    heading.textContent = "スコア推移";
+    chart.appendChild(heading);
+
+    var note = document.createElement("p");
+    note.className = "history-score-chart-note";
+    note.textContent = "絞り込み条件（企業・カテゴリ）は反映されますが、グラフは常に日付が古い順に表示されます。並び替え設定は一覧のみに適用されます。";
+    chart.appendChild(note);
+
+    var body = document.createElement("div");
+    body.id = "historyScoreChartBody";
+    body.className = "history-score-chart-body";
+    chart.appendChild(body);
+
+    anchor.insertAdjacentElement("afterend", chart);
+  }
+
+  function renderHistoryScoreChart(filteredLogs) {
+    var body = $("historyScoreChartBody");
+    if (!body) {
+      return;
+    }
+    body.textContent = "";
+
+    var points = (filteredLogs || [])
+      .filter(function (log) {
+        return log.finalFeedback && typeof log.finalFeedback.finalScore === "number";
+      })
+      .slice()
+      .sort(function (a, b) {
+        return getHistoryLogTimestamp(a) - getHistoryLogTimestamp(b);
+      })
+      .map(function (log) {
+        return {
+          score: log.finalFeedback.finalScore,
+          dateLabel: formatDate(log.savedAt || log.finishedAt || log.startedAt)
+        };
+      });
+
+    if (points.length < 2) {
+      var empty = document.createElement("p");
+      empty.className = "history-score-chart-empty";
+      empty.textContent = "データが不足しています（2件以上の面接記録が必要です）。";
+      body.appendChild(empty);
+      return;
+    }
+
+    var width = 640;
+    var height = 220;
+    var marginLeft = 40;
+    var marginRight = 16;
+    var marginTop = 16;
+    var marginBottom = 28;
+    var plotWidth = width - marginLeft - marginRight;
+    var plotHeight = height - marginTop - marginBottom;
+    var svgNs = "http://www.w3.org/2000/svg";
+
+    function yForScore(score) {
+      var clamped = Math.max(0, Math.min(100, score));
+      return marginTop + plotHeight - (clamped / 100) * plotHeight;
+    }
+
+    function xForIndex(index) {
+      if (points.length === 1) {
+        return marginLeft + plotWidth / 2;
+      }
+      return marginLeft + (index / (points.length - 1)) * plotWidth;
+    }
+
+    var svg = document.createElementNS(svgNs, "svg");
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", height);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "面接スコアの推移グラフ");
+    svg.classList.add("history-score-chart-svg");
+
+    [0, 25, 50, 75, 100].forEach(function (tick) {
+      var y = yForScore(tick);
+      var gridLine = document.createElementNS(svgNs, "line");
+      gridLine.setAttribute("x1", String(marginLeft));
+      gridLine.setAttribute("x2", String(width - marginRight));
+      gridLine.setAttribute("y1", String(y));
+      gridLine.setAttribute("y2", String(y));
+      gridLine.setAttribute("class", "history-score-chart-grid");
+      svg.appendChild(gridLine);
+
+      var label = document.createElementNS(svgNs, "text");
+      label.setAttribute("x", String(marginLeft - 8));
+      label.setAttribute("y", String(y));
+      label.setAttribute("class", "history-score-chart-axis-label");
+      label.setAttribute("text-anchor", "end");
+      label.setAttribute("dominant-baseline", "middle");
+      label.textContent = String(tick);
+      svg.appendChild(label);
+    });
+
+    var baseline = document.createElementNS(svgNs, "line");
+    baseline.setAttribute("x1", String(marginLeft));
+    baseline.setAttribute("x2", String(width - marginRight));
+    baseline.setAttribute("y1", String(marginTop + plotHeight));
+    baseline.setAttribute("y2", String(marginTop + plotHeight));
+    baseline.setAttribute("class", "history-score-chart-axis");
+    svg.appendChild(baseline);
+
+    var pathData = points.map(function (point, index) {
+      var x = xForIndex(index);
+      var y = yForScore(point.score);
+      return (index === 0 ? "M" : "L") + x + "," + y;
+    }).join(" ");
+    var path = document.createElementNS(svgNs, "path");
+    path.setAttribute("d", pathData);
+    path.setAttribute("class", "history-score-chart-line");
+    svg.appendChild(path);
+
+    points.forEach(function (point, index) {
+      var x = xForIndex(index);
+      var y = yForScore(point.score);
+      var circle = document.createElementNS(svgNs, "circle");
+      circle.setAttribute("cx", String(x));
+      circle.setAttribute("cy", String(y));
+      circle.setAttribute("r", "5");
+      circle.setAttribute("class", "history-score-chart-point");
+      circle.setAttribute("tabindex", "0");
+
+      var pointTitle = document.createElementNS(svgNs, "title");
+      pointTitle.textContent = point.dateLabel + " / " + point.score + "点";
+      circle.appendChild(pointTitle);
+
+      svg.appendChild(circle);
+    });
+
+    body.appendChild(svg);
+  }
+
   function renderHistory() {
     var logs = appState.activeAccountId ? getAccountInterviewLogs(appState.activeAccountId) : [];
     var list = $("historyList");
@@ -3941,6 +4273,8 @@
 
     ensureHistoryFilterBar(logs);
     var filteredLogs = applyHistoryFilterAndSort(logs);
+    ensureHistoryScoreChart();
+    renderHistoryScoreChart(filteredLogs);
 
     if (list) {
       list.textContent = "";
@@ -4201,6 +4535,8 @@
       var a = document.createElement("p");
       var transcript = document.createElement("p");
       var audioNote = document.createElement("p");
+      var fillerNote = document.createElement("p");
+      var paceNote = document.createElement("p");
       var e = document.createElement("p");
       var deepDive = document.createElement("p");
       var followUpReason = document.createElement("p");
@@ -4212,6 +4548,17 @@
       audioNote.textContent = entry.audio && entry.audio.reviewAvailableDuringSession
         ? "音声: 長期保存なし。面接終了直後の画面でのみ確認可能です。"
         : "音声: 保存なし";
+      var speechAnalysis = analyzeEntrySpeech(entry);
+      fillerNote.className = "item-meta";
+      fillerNote.textContent = "フィラーワード: " + (speechAnalysis.fillerWords.total > 0
+        ? speechAnalysis.fillerWords.total + "回（" + speechAnalysis.fillerWords.breakdown.map(function (item) {
+          return item.word + "×" + item.count;
+        }).join(", ") + "）"
+        : "なし");
+      paceNote.className = "item-meta";
+      paceNote.textContent = "話速: " + (speechAnalysis.paceCharsPerMinute !== null
+        ? speechAnalysis.paceCharsPerMinute + "文字/分"
+        : "計測不可（音声入力なし）");
       e.textContent = "評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし");
       deepDive.textContent = "深掘り質問: " + (entry.evaluation && entry.evaluation.deepDiveQuestion ? entry.evaluation.deepDiveQuestion : "なし");
       followUpReason.textContent = "追加確認の理由: " + (entry.evaluation && entry.evaluation.followUpReason ? entry.evaluation.followUpReason : "なし");
@@ -4223,6 +4570,8 @@
         block.appendChild(transcript);
         block.appendChild(audioNote);
       }
+      block.appendChild(fillerNote);
+      block.appendChild(paceNote);
       block.appendChild(e);
       block.appendChild(deepDive);
       block.appendChild(followUpReason);
