@@ -941,6 +941,33 @@ textarea:focus {
   background: var(--surface-soft);
 }
 
+.camera-preview-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  max-width: 320px;
+}
+
+.camera-self-preview {
+  width: 100%;
+  max-height: 240px;
+  border-radius: var(--radius);
+  background: #000;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.camera-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
 .score-breakdown {
   display: grid;
   gap: 10px;
@@ -1013,6 +1040,39 @@ textarea:focus {
 
 .audio-review-item audio {
   width: 100%;
+}
+
+.video-review-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.video-review-list {
+  display: grid;
+  gap: 12px;
+}
+
+.video-review-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.video-review-item p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.video-review-item video {
+  width: 100%;
+  max-height: 360px;
+  border-radius: var(--radius);
+  background: #000;
 }
 
 .two-column-list {

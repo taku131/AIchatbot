@@ -289,6 +289,13 @@
           <label for="userProfileInput">自分用メモ</label>
           <textarea id="userProfileInput" name="userProfile" rows="7" placeholder="学歴、研究、開発経験、強み、志望理由、今日の面接で詰まった質問など"></textarea>
         </div>
+        <div class="field field-wide">
+          <label class="checkbox-label" for="cameraEnabledInput">
+            <input id="cameraEnabledInput" name="cameraEnabled" type="checkbox">
+            カメラで自分の様子を録画しながら練習する（任意）
+          </label>
+          <p id="cameraConsentHelp" class="field-help">有効にすると面接開始時にブラウザからカメラ・マイクへのアクセス許可を求められます。録画はこのセッション中のみブラウザ内に保持され、面接を終了・再スタートすると自動的に破棄されます。外部のサーバーには送信されません。</p>
+        </div>
         <div id="sourceEsPreview" class="source-es-preview field-wide" hidden>
           <p class="panel-label">Interview Dataset</p>
           <h3 id="sourceEsPreviewTitle">使用する企業・ESセット</h3>
@@ -308,6 +315,11 @@
           <h2 id="interviewTitle">面接チャット</h2>
         </div>
         <p id="progressText" class="progress-text">質問 0 / 0</p>
+      </div>
+
+      <div id="cameraPreviewPanel" class="camera-preview-panel" hidden>
+        <video id="cameraSelfPreview" class="camera-self-preview" autoplay muted playsinline aria-label="カメラのセルフプレビュー（自分の映像、音声はミュートされています）"></video>
+        <p id="cameraStatus" class="camera-status" role="status" aria-live="polite"></p>
       </div>
 
       <div class="interview-layout">
@@ -394,10 +406,19 @@
           <h3 id="speechMetricsTitle">話し方の分析</h3>
           <div id="speechMetricsSummary" class="speech-metrics-summary"></div>
         </section>
+        <section class="feedback-block field-wide" aria-labelledby="responseTimeTitle">
+          <h3 id="responseTimeTitle">回答時間の分析</h3>
+          <div id="responseTimeSummary" class="speech-metrics-summary"></div>
+        </section>
         <section class="feedback-block field-wide" aria-labelledby="audioReviewTitle">
           <h3 id="audioReviewTitle">音声確認</h3>
           <p class="audio-review-note">録音はこの画面を開いている間だけ確認できます。履歴には文字起こしだけ保存されます。</p>
           <div id="audioReviewList" class="audio-review-list"></div>
+        </section>
+        <section class="feedback-block field-wide" aria-labelledby="videoReviewTitle">
+          <h3 id="videoReviewTitle">映像確認</h3>
+          <p class="video-review-note">録画はこの画面を開いている間だけ確認できます。長期保存はされません。</p>
+          <div id="videoReviewList" class="video-review-list"></div>
         </section>
       </div>
 

@@ -22,7 +22,8 @@
     interviewerTypeMode: "fixed",
     interviewerTypeSelection: "friendly",
     questionCount: 5,
-    userProfile: ""
+    userProfile: "",
+    cameraEnabled: false
   };
 
   var DEFAULT_AI_SETTINGS = {
@@ -229,7 +230,9 @@
     editingEsEntryId: null,
     currentExpectedAnswerData: null,
     currentQuestionTopic: null,
+    currentQuestionShownAt: null,
     audioClips: {},
+    videoClips: {},
     isBusy: false,
     historyFilter: {
       companyName: "",
@@ -286,6 +289,19 @@
     finalTranscript: "",
     lastError: "",
     pendingClip: null
+  };
+
+  var cameraInputState = {
+    mediaStream: null,
+    mediaRecorder: null,
+    videoChunks: [],
+    recordingStopPromise: null,
+    recordingStartedAt: null,
+    isSupported: false,
+    isEnabled: false,
+    isRecording: false,
+    pendingClip: null,
+    lastError: ""
   };
 
   var questionSpeechState = {
@@ -1940,7 +1956,11 @@
       category: normalizeCategory(getValue("categorySelect", DEFAULT_SETTINGS.category)),
       interviewerType: getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType),
       questionCount: Math.max(1, parseInt(getValue("questionCountSelect", DEFAULT_SETTINGS.questionCount), 10) || DEFAULT_SETTINGS.questionCount),
-      userProfile: getRawValue("userProfileInput", "")
+      userProfile: getRawValue("userProfileInput", ""),
+      cameraEnabled: (function () {
+        var checkbox = $("cameraEnabledInput");
+        return Boolean(checkbox && checkbox.checked);
+      })()
     };
   }
 
@@ -3372,6 +3392,8 @@
       return;
     }
     releaseAudioClips();
+    releaseVideoClips();
+    stopCameraMediaStream();
     var settings = resolveInterviewerSettings(readSettings());
     var sourceCompanyId = settings.companyId || appState.pendingSourceCompanyId;
     var sourceCompany = sourceCompanyId ? findCompany(sourceCompanyId, appState.activeAccountId) : null;
@@ -3395,6 +3417,8 @@
     appState.pendingSourceCompanyId = sourceCompanyId || null;
     renderSourceEsPreview(sourceCompany, sourceEntries);
     appState.settings = settings;
+    cameraInputState.isEnabled = Boolean(settings.cameraEnabled);
+    cameraInputState.lastError = "";
     updateCurrentInterviewerAvatar(settings.interviewerType);
     appState.questionIndex = 0;
     appState.finished = false;
@@ -3423,12 +3447,19 @@
       timeline.textContent = "";
     }
     showView("interviewView");
+    if (cameraInputState.isEnabled) {
+      await setupCameraCapture();
+    } else {
+      stopCameraMediaStream();
+    }
     setBusy(true, "質問を生成中です...");
     appState.currentQuestion = await getInterviewQuestion(settings);
     setBusy(true, "評価基準を生成中です...");
     appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, settings);
     setText("currentQuestion", appState.currentQuestion);
+    appState.currentQuestionShownAt = Date.now();
     speakQuestion(appState.currentQuestion);
+    startCameraRecording();
     setText("feedbackSummary", "回答を入力してください。");
     setBusy(false);
     var answerInput = $("answerInput");
@@ -3456,6 +3487,18 @@
       await voiceInputState.recordingStopPromise;
     }
     return voiceInputState.pendingClip;
+  }
+
+  async function finalizeCameraCaptureBeforeSubmit() {
+    if (!cameraInputState.isEnabled || !cameraInputState.isSupported) {
+      return null;
+    }
+    if (cameraInputState.isRecording) {
+      await stopCameraRecording();
+    } else if (cameraInputState.recordingStopPromise) {
+      await cameraInputState.recordingStopPromise;
+    }
+    return cameraInputState.pendingClip;
   }
 
   function createTranscriptRecord(text, clip) {
@@ -3601,14 +3644,16 @@
     if (!appState.interviewLog || appState.finished || appState.isBusy) {
       return;
     }
-
-    var audioClip = await finalizeVoiceCaptureBeforeSubmit();
     var answerInput = $("answerInput");
     var answer = answerInput && typeof answerInput.value === "string" ? answerInput.value.trim() : "";
     if (!answer) {
       setText("feedbackSummary", "回答を入力してから送信してください。");
       return;
     }
+    var answerSubmittedAt = Date.now();
+
+    var audioClip = await finalizeVoiceCaptureBeforeSubmit();
+    var videoClip = await finalizeCameraCaptureBeforeSubmit();
 
     setBusy(true, "回答を評価中です...");
     var expectedAnswerData = appState.currentExpectedAnswerData || await getExpectedAnswerData(appState.currentQuestion, appState.settings);
@@ -3625,6 +3670,7 @@
       transcript: createTranscriptRecord(answer, audioClip),
       audio: createAudioMetadata(audioClip),
       audioClipId: audioClip ? audioClip.id : null,
+      videoClipId: videoClip ? videoClip.id : null,
       expectedAnswerData: expectedAnswerData,
       createdAt: new Date().toISOString()
     };
@@ -3650,11 +3696,16 @@
       transcript: message.transcript,
       audio: message.audio,
       audioClipId: message.audioClipId,
+      videoClipId: message.videoClipId,
       expectedAnswerData: expectedAnswerData,
-      evaluation: evaluationRecord
+      evaluation: evaluationRecord,
+      responseTimeMs: typeof appState.currentQuestionShownAt === "number"
+        ? (answerSubmittedAt - appState.currentQuestionShownAt)
+        : null
     });
     voiceInputState.pendingClip = null;
     voiceInputState.finalTranscript = "";
+    cameraInputState.pendingClip = null;
     appState.questionIndex += 1;
 
     renderImmediateFeedback(evaluation);
@@ -3676,7 +3727,9 @@
     setBusy(true, "次の評価基準を生成中です...");
     appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, appState.settings);
     setText("currentQuestion", appState.currentQuestion);
+    appState.currentQuestionShownAt = Date.now();
     speakQuestion(appState.currentQuestion);
+    startCameraRecording();
     setText("progressText", "質問 " + (appState.questionIndex + 1) + " / " + appState.settings.questionCount);
     setText("feedbackSummary", nextQuestionPlan.isDeepDive
       ? (nextQuestionPlan.reason || "前の回答で確認しきれない点があるため、そこだけ追加で確認します。")
@@ -3723,6 +3776,7 @@
     if (!appState.interviewLog || appState.finished || appState.isBusy) {
       return;
     }
+    stopCameraMediaStream();
     setBusy(true, "最終フィードバックを作成中です...");
     appState.interviewLog.finishedAt = new Date().toISOString();
     appState.interviewLog.finalFeedback = await getFinalFeedback(appState.interviewLog);
@@ -3745,7 +3799,9 @@
     setText("revisionDirection", feedback.revisionDirection);
     appendListItems("nextPracticeList", feedback.nextPracticeList);
     renderSpeechMetricsSummary();
+    renderResponseTimeSummary();
     renderAudioReview();
+    renderVideoReview();
   }
 
   function renderSpeechMetricsSummary() {
@@ -3815,6 +3871,65 @@
     container.appendChild(paceSummary);
   }
 
+  function renderResponseTimeSummary() {
+    var container = $("responseTimeSummary");
+    if (!container) {
+      return;
+    }
+    container.textContent = "";
+    var entries = appState.interviewLog && Array.isArray(appState.interviewLog.entries) ? appState.interviewLog.entries : [];
+    if (!entries.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "分析対象の回答がありません。";
+      container.appendChild(empty);
+      return;
+    }
+
+    var measuredEntries = entries.filter(function (entry) {
+      return typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0;
+    });
+
+    if (!measuredEntries.length) {
+      var noData = document.createElement("p");
+      noData.className = "item-meta";
+      noData.textContent = "回答時間を計測できませんでした。";
+      container.appendChild(noData);
+      return;
+    }
+
+    var totalMs = measuredEntries.reduce(function (sum, entry) {
+      return sum + entry.responseTimeMs;
+    }, 0);
+    var averageMs = totalMs / measuredEntries.length;
+    var slowestEntry = measuredEntries.reduce(function (slowest, entry) {
+      return (!slowest || entry.responseTimeMs > slowest.responseTimeMs) ? entry : slowest;
+    }, null);
+
+    var averageSummary = document.createElement("p");
+    averageSummary.className = "item-meta";
+    averageSummary.textContent = "平均回答時間: " + formatDuration(averageMs);
+    container.appendChild(averageSummary);
+
+    if (slowestEntry) {
+      var slowestSummary = document.createElement("p");
+      slowestSummary.className = "item-meta";
+      slowestSummary.textContent = "最も時間がかかった質問: 質問" + slowestEntry.questionNumber +
+        "（" + formatDuration(slowestEntry.responseTimeMs) + "）";
+      container.appendChild(slowestSummary);
+    }
+
+    var list = document.createElement("ul");
+    list.className = "feedback-list";
+    entries.forEach(function (entry) {
+      var item = document.createElement("li");
+      var hasTime = typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0;
+      item.textContent = "質問" + entry.questionNumber + ": " + (hasTime ? formatDuration(entry.responseTimeMs) : "計測不可");
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
+
   function formatDuration(ms) {
     if (!Number.isFinite(ms) || ms <= 0) {
       return "時間不明";
@@ -3877,6 +3992,58 @@
     });
   }
 
+  function getVideoClip(clipId) {
+    return clipId && appState.videoClips ? appState.videoClips[clipId] || null : null;
+  }
+
+  function renderVideoReview() {
+    var list = $("videoReviewList");
+    if (!list) {
+      return;
+    }
+    list.textContent = "";
+    var entries = appState.interviewLog && Array.isArray(appState.interviewLog.entries) ? appState.interviewLog.entries : [];
+    var videoEntries = entries.map(function (entry) {
+      return {
+        entry: entry,
+        clip: getVideoClip(entry.videoClipId)
+      };
+    }).filter(function (item) {
+      return item.clip && item.clip.url;
+    });
+
+    if (!videoEntries.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "この面接で確認できる録画はありません。";
+      list.appendChild(empty);
+      return;
+    }
+
+    videoEntries.forEach(function (item) {
+      var block = document.createElement("article");
+      var title = document.createElement("p");
+      var meta = document.createElement("p");
+      var transcript = document.createElement("p");
+      var video = document.createElement("video");
+      block.className = "video-review-item";
+      title.textContent = "Q" + item.entry.questionNumber + " 録画";
+      meta.textContent = [
+        item.clip.mimeType || "video",
+        item.clip.size ? Math.round(item.clip.size / 1024) + "KB" : "",
+        formatDuration(item.clip.durationMs)
+      ].filter(Boolean).join(" / ");
+      transcript.textContent = "文字起こし: " + (item.entry.transcript && item.entry.transcript.text ? item.entry.transcript.text : item.entry.answer || "");
+      video.controls = true;
+      video.src = item.clip.url;
+      block.appendChild(title);
+      block.appendChild(meta);
+      block.appendChild(video);
+      block.appendChild(transcript);
+      list.appendChild(block);
+    });
+  }
+
   function releaseAudioClips() {
     Object.keys(appState.audioClips || {}).forEach(function (clipId) {
       var clip = appState.audioClips[clipId];
@@ -3886,6 +4053,17 @@
     });
     appState.audioClips = {};
     voiceInputState.pendingClip = null;
+  }
+
+  function releaseVideoClips() {
+    Object.keys(appState.videoClips || {}).forEach(function (clipId) {
+      var clip = appState.videoClips[clipId];
+      if (clip && clip.url && window.URL && typeof window.URL.revokeObjectURL === "function") {
+        window.URL.revokeObjectURL(clip.url);
+      }
+    });
+    appState.videoClips = {};
+    cameraInputState.pendingClip = null;
   }
 
   function appendListItems(id, items) {
@@ -4537,6 +4715,7 @@
       var audioNote = document.createElement("p");
       var fillerNote = document.createElement("p");
       var paceNote = document.createElement("p");
+      var responseTimeNote = document.createElement("p");
       var e = document.createElement("p");
       var deepDive = document.createElement("p");
       var followUpReason = document.createElement("p");
@@ -4559,6 +4738,10 @@
       paceNote.textContent = "話速: " + (speechAnalysis.paceCharsPerMinute !== null
         ? speechAnalysis.paceCharsPerMinute + "文字/分"
         : "計測不可（音声入力なし）");
+      responseTimeNote.className = "item-meta";
+      responseTimeNote.textContent = "回答時間: " + (typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0
+        ? formatDuration(entry.responseTimeMs)
+        : "計測不可");
       e.textContent = "評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし");
       deepDive.textContent = "深掘り質問: " + (entry.evaluation && entry.evaluation.deepDiveQuestion ? entry.evaluation.deepDiveQuestion : "なし");
       followUpReason.textContent = "追加確認の理由: " + (entry.evaluation && entry.evaluation.followUpReason ? entry.evaluation.followUpReason : "なし");
@@ -4572,6 +4755,7 @@
       }
       block.appendChild(fillerNote);
       block.appendChild(paceNote);
+      block.appendChild(responseTimeNote);
       block.appendChild(e);
       block.appendChild(deepDive);
       block.appendChild(followUpReason);
@@ -4602,6 +4786,12 @@
     setValue("categorySelect", normalizeCategory(settings.category || DEFAULT_SETTINGS.category));
     setValue("questionCountSelect", settings.questionCount || DEFAULT_SETTINGS.questionCount);
     setValue("userProfileInput", settings.userProfile || "");
+    // カメラ利用は毎セッション明示的な同意操作を必須にするため、過去の設定から
+    // 有効状態を復元しない（チェックは常にユーザーの今回の操作に委ねる）。
+    var cameraEnabledCheckbox = $("cameraEnabledInput");
+    if (cameraEnabledCheckbox && !cameraEnabledCheckbox.disabled) {
+      cameraEnabledCheckbox.checked = false;
+    }
     selectInterviewerType(settings.interviewerTypeMode === "random"
       ? RANDOM_INTERVIEWER_TYPE_ID
       : settings.interviewerTypeSelection || settings.interviewerType || DEFAULT_SETTINGS.interviewerType);
@@ -4644,6 +4834,9 @@
         lines.push("テーマ: " + entry.topic.label);
       }
       lines.push("A. " + (entry.answer || ""));
+      if (typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0) {
+        lines.push("回答時間: " + formatDuration(entry.responseTimeMs));
+      }
       lines.push("評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし"));
       if (entry.evaluation && entry.evaluation.deepDiveQuestion) {
         lines.push("深掘り質問: " + entry.evaluation.deepDiveQuestion);
@@ -4738,6 +4931,8 @@
 
   function restart() {
     releaseAudioClips();
+    releaseVideoClips();
+    stopCameraMediaStream();
     renderSetupCompanySelect();
     showView("setupView");
   }
@@ -4758,6 +4953,8 @@
       return;
     }
     releaseAudioClips();
+    releaseVideoClips();
+    stopCameraMediaStream();
     if (appState.editingCompanyId) {
       cancelEditCompany();
     }
@@ -5229,6 +5426,158 @@
     return Promise.resolve(voiceInputState.pendingClip);
   }
 
+  function getSupportedVideoMimeType() {
+    if (!window.MediaRecorder || typeof window.MediaRecorder.isTypeSupported !== "function") {
+      return "";
+    }
+    return [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+      "video/mp4"
+    ].find(function (type) {
+      return window.MediaRecorder.isTypeSupported(type);
+    }) || "";
+  }
+
+  function stopCameraMediaStream() {
+    if (cameraInputState.mediaRecorder && cameraInputState.mediaRecorder.state !== "inactive") {
+      try {
+        cameraInputState.mediaRecorder.stop();
+      } catch (error) {
+        console.warn("Camera recorder could not be stopped during teardown:", error);
+      }
+    }
+    cameraInputState.mediaRecorder = null;
+    cameraInputState.recordingStopPromise = null;
+    cameraInputState.videoChunks = [];
+    cameraInputState.recordingStartedAt = null;
+    if (cameraInputState.mediaStream && typeof cameraInputState.mediaStream.getTracks === "function") {
+      cameraInputState.mediaStream.getTracks().forEach(function (track) {
+        if (track && typeof track.stop === "function") {
+          track.stop();
+        }
+      });
+    }
+    cameraInputState.mediaStream = null;
+    cameraInputState.isRecording = false;
+    var preview = $("cameraSelfPreview");
+    if (preview) {
+      preview.srcObject = null;
+    }
+    var panel = $("cameraPreviewPanel");
+    if (panel) {
+      panel.hidden = true;
+    }
+  }
+
+  async function setupCameraCapture() {
+    cameraInputState.lastError = "";
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function" || !window.MediaRecorder) {
+      cameraInputState.isSupported = false;
+      cameraInputState.lastError = "unsupported";
+      setText("cameraStatus", "このブラウザはカメラ録画に対応していません。テキスト回答や音声入力など他の機能は通常通り利用できます。");
+      var unsupportedPanel = $("cameraPreviewPanel");
+      if (unsupportedPanel) {
+        unsupportedPanel.hidden = false;
+      }
+      return;
+    }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      cameraInputState.mediaStream = stream;
+      cameraInputState.isSupported = true;
+      var preview = $("cameraSelfPreview");
+      if (preview) {
+        preview.srcObject = stream;
+      }
+      var panel = $("cameraPreviewPanel");
+      if (panel) {
+        panel.hidden = false;
+      }
+      setText("cameraStatus", "カメラ映像を録画しています。録画はこの面接セッション中のみ確認でき、終了後は破棄されます。");
+    } catch (error) {
+      cameraInputState.isSupported = false;
+      cameraInputState.mediaStream = null;
+      cameraInputState.lastError = error && error.message ? error.message : "camera-unavailable";
+      setText("cameraStatus", "カメラ・マイクを利用できませんでした（" + cameraInputState.lastError + "）。テキスト回答や音声入力など他の機能には影響しません。");
+      var errorPanel = $("cameraPreviewPanel");
+      if (errorPanel) {
+        errorPanel.hidden = false;
+      }
+      console.warn("Camera capture could not be started:", error);
+    }
+  }
+
+  function createVideoClipFromBlob(blob, startedAt) {
+    if (!blob || !blob.size || !window.URL || typeof window.URL.createObjectURL !== "function") {
+      return null;
+    }
+    var clip = {
+      id: makeId("video"),
+      url: window.URL.createObjectURL(blob),
+      mimeType: blob.type || "video/webm",
+      size: blob.size,
+      durationMs: startedAt ? Math.max(0, Date.now() - startedAt) : null,
+      createdAt: new Date().toISOString()
+    };
+    appState.videoClips[clip.id] = clip;
+    return clip;
+  }
+
+  function startCameraRecording() {
+    if (!cameraInputState.isEnabled || !cameraInputState.isSupported || !cameraInputState.mediaStream || !window.MediaRecorder) {
+      return;
+    }
+    try {
+      var mimeType = getSupportedVideoMimeType();
+      var options = mimeType ? { mimeType: mimeType } : undefined;
+      // onstop/ondataavailable はこのrecorder・chunksをクロージャで直接参照する。
+      // cameraInputState.mediaRecorder経由で読むと、途中でstopCameraMediaStream()が
+      // 参照をnullに戻した場合にTypeErrorになるため。
+      var chunks = [];
+      var startedAt = Date.now();
+      var recorder = new window.MediaRecorder(cameraInputState.mediaStream, options);
+      cameraInputState.videoChunks = chunks;
+      cameraInputState.pendingClip = null;
+      cameraInputState.recordingStartedAt = startedAt;
+      cameraInputState.mediaRecorder = recorder;
+      recorder.ondataavailable = function (event) {
+        if (event.data && event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+      cameraInputState.recordingStopPromise = new Promise(function (resolve) {
+        recorder.onstop = function () {
+          var type = recorder.mimeType || mimeType || "video/webm";
+          var blob = chunks.length ? new Blob(chunks, { type: type }) : null;
+          var clip = createVideoClipFromBlob(blob, startedAt);
+          if (cameraInputState.mediaRecorder === recorder) {
+            cameraInputState.pendingClip = clip;
+            cameraInputState.isRecording = false;
+          }
+          resolve(clip);
+        };
+      });
+      recorder.start();
+      cameraInputState.isRecording = true;
+    } catch (error) {
+      cameraInputState.isRecording = false;
+      cameraInputState.recordingStopPromise = null;
+      cameraInputState.lastError = error && error.message ? error.message : "camera-recording-unavailable";
+      console.warn("Camera recording could not be started:", error);
+    }
+  }
+
+  function stopCameraRecording() {
+    if (cameraInputState.mediaRecorder && cameraInputState.mediaRecorder.state !== "inactive") {
+      cameraInputState.mediaRecorder.stop();
+      return cameraInputState.recordingStopPromise || Promise.resolve(null);
+    }
+    cameraInputState.isRecording = false;
+    return Promise.resolve(cameraInputState.pendingClip);
+  }
+
   function setVoiceUiState(state) {
     var panel = document.querySelector(".voice-input-panel");
     var status = $("voiceStatus");
@@ -5353,13 +5702,23 @@
   }
 
   function guardedNavigation(handler) {
-    return function (event) {
+    return async function (event) {
       if (!confirmLeaveInterviewIfNeeded()) {
         if (event && typeof event.preventDefault === "function") {
           event.preventDefault();
         }
         return;
       }
+      // 画面遷移のたびに、進行中のカメラ録画・音声録音を止め、
+      // レビュー用クリップ（フィードバック画面限定の再生用データ）を解放する。
+      // クリップが無い場合や録画中でない場合は何もしないため、面接と無関係な
+      // 画面遷移（例: 設定画面→履歴画面）で呼んでも副作用はない。
+      if (cameraInputState.isRecording) {
+        await stopCameraRecording();
+      }
+      stopCameraMediaStream();
+      releaseVideoClips();
+      releaseAudioClips();
       handler(event);
     };
   }
@@ -5416,6 +5775,8 @@
       stopQuestionSpeech();
       releaseAudioClips();
       stopVoiceMediaStream();
+      releaseVideoClips();
+      stopCameraMediaStream();
       if (hasUnsavedInterviewProgress() || hasPendingCloudInterviewLogSave()) {
         event.preventDefault();
         event.returnValue = "";
@@ -5423,11 +5784,26 @@
     });
   }
 
+  function setupCameraInput() {
+    var supportsCamera = Boolean(navigator.mediaDevices
+      && typeof navigator.mediaDevices.getUserMedia === "function"
+      && window.MediaRecorder);
+    if (!supportsCamera) {
+      var checkbox = $("cameraEnabledInput");
+      if (checkbox) {
+        checkbox.checked = false;
+        checkbox.disabled = true;
+      }
+      setText("cameraConsentHelp", "このブラウザはカメラ録画に対応していません。テキスト回答や音声入力は通常通りご利用いただけます。");
+    }
+  }
+
   function init() {
     captureLocalMigrationSnapshot();
     bindEvents();
     setupQuestionSpeech();
     setupVoiceInput();
+    setupCameraInput();
     selectInterviewerType(getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType));
     renderAccounts();
     renderAiSettings();
