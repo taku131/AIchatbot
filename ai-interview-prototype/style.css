@@ -1048,6 +1048,12 @@ textarea:focus {
   line-height: 1.55;
 }
 
+.body-language-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .video-review-list {
   display: grid;
   gap: 12px;

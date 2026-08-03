@@ -301,8 +301,30 @@
     isEnabled: false,
     isRecording: false,
     pendingClip: null,
-    lastError: ""
+    lastError: "",
+    bodyLanguageSamples: [],
+    faceDetector: null,
+    faceDetectorSupported: false,
+    samplingIntervalId: null,
+    samplingSessionId: 0,
+    samplingTickCount: 0,
+    samplingTickInProgress: false,
+    lastFrameData: null,
+    sampleCanvas: null,
+    sampleCanvasCtx: null,
+    lastBodyLanguageMetrics: null
   };
+
+  // 表情・視線・姿勢の簡易分析（Issue #3）に関する調整用定数。
+  // 外部AI画像解析は使わず、ブラウザ内蔵のShape Detection API（あれば）と
+  // オフスクリーンcanvasでのフレーム差分のみで簡易スコアを算出する。
+  var BODY_LANGUAGE_SAMPLE_INTERVAL_MS = 500;
+  var BODY_LANGUAGE_SAMPLE_WIDTH = 64;
+  var BODY_LANGUAGE_SAMPLE_HEIGHT = 48;
+  // グレースケール(0-255)でのフレーム間平均絶対差分がこの値のとき「動きが大きい」= 100点とみなす経験則上の目安値。
+  var BODY_LANGUAGE_MAX_MOTION_DIFF = 40;
+  // 顔中心座標(0-1に正規化)のフレーム間RMSぶれがこの値のとき「安定度0点」とみなす経験則上の目安値。
+  var BODY_LANGUAGE_MAX_FACE_SPREAD = 0.15;
 
   var questionSpeechState = {
     isSupported: false,
@@ -3654,6 +3676,9 @@
 
     var audioClip = await finalizeVoiceCaptureBeforeSubmit();
     var videoClip = await finalizeCameraCaptureBeforeSubmit();
+    var bodyLanguageMetrics = (cameraInputState.isEnabled && cameraInputState.isSupported && cameraInputState.lastBodyLanguageMetrics)
+      ? cameraInputState.lastBodyLanguageMetrics
+      : createUnavailableBodyLanguageMetrics();
 
     setBusy(true, "回答を評価中です...");
     var expectedAnswerData = appState.currentExpectedAnswerData || await getExpectedAnswerData(appState.currentQuestion, appState.settings);
@@ -3701,11 +3726,13 @@
       evaluation: evaluationRecord,
       responseTimeMs: typeof appState.currentQuestionShownAt === "number"
         ? (answerSubmittedAt - appState.currentQuestionShownAt)
-        : null
+        : null,
+      bodyLanguageMetrics: bodyLanguageMetrics
     });
     voiceInputState.pendingClip = null;
     voiceInputState.finalTranscript = "";
     cameraInputState.pendingClip = null;
+    cameraInputState.lastBodyLanguageMetrics = null;
     appState.questionIndex += 1;
 
     renderImmediateFeedback(evaluation);
@@ -3800,6 +3827,7 @@
     appendListItems("nextPracticeList", feedback.nextPracticeList);
     renderSpeechMetricsSummary();
     renderResponseTimeSummary();
+    renderBodyLanguageSummary();
     renderAudioReview();
     renderVideoReview();
   }
@@ -3925,6 +3953,108 @@
       var item = document.createElement("li");
       var hasTime = typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0;
       item.textContent = "質問" + entry.questionNumber + ": " + (hasTime ? formatDuration(entry.responseTimeMs) : "計測不可");
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
+
+  function describeMotionLevel(score) {
+    if (score < 34) {
+      return "動きが少なめ";
+    }
+    if (score > 66) {
+      return "動きが多め";
+    }
+    return "標準的";
+  }
+
+  function renderBodyLanguageSummary() {
+    var container = $("bodyLanguageSummary");
+    if (!container) {
+      return;
+    }
+    container.textContent = "";
+    var entries = appState.interviewLog && Array.isArray(appState.interviewLog.entries) ? appState.interviewLog.entries : [];
+    var usedEntries = entries.filter(function (entry) {
+      return entry.bodyLanguageMetrics && entry.bodyLanguageMetrics.available;
+    });
+
+    if (!usedEntries.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "この面接ではカメラが使用されなかったため、映像の傾向分析はありません。";
+      container.appendChild(empty);
+      return;
+    }
+
+    var motionEntries = usedEntries.filter(function (entry) {
+      return entry.bodyLanguageMetrics.motionLevel && entry.bodyLanguageMetrics.motionLevel.available &&
+        typeof entry.bodyLanguageMetrics.motionLevel.score === "number" &&
+        Number.isFinite(entry.bodyLanguageMetrics.motionLevel.score);
+    });
+
+    var motionSummary = document.createElement("p");
+    motionSummary.className = "item-meta";
+    if (motionEntries.length) {
+      var motionTotal = motionEntries.reduce(function (sum, entry) {
+        return sum + entry.bodyLanguageMetrics.motionLevel.score;
+      }, 0);
+      var motionAverage = Math.round(motionTotal / motionEntries.length);
+      motionSummary.textContent = "平均的な映像の変化量: " + motionAverage + "/100（" +
+        describeMotionLevel(motionAverage) + "、参考値）";
+    } else {
+      motionSummary.textContent = "映像の変化量: 算出できませんでした。";
+    }
+    container.appendChild(motionSummary);
+
+    var stabilityEntries = usedEntries.filter(function (entry) {
+      return entry.bodyLanguageMetrics.faceStability && entry.bodyLanguageMetrics.faceStability.available &&
+        typeof entry.bodyLanguageMetrics.faceStability.score === "number" &&
+        Number.isFinite(entry.bodyLanguageMetrics.faceStability.score);
+    });
+
+    var stabilitySummary = document.createElement("p");
+    stabilitySummary.className = "item-meta";
+    if (stabilityEntries.length) {
+      var stabilityTotal = stabilityEntries.reduce(function (sum, entry) {
+        return sum + entry.bodyLanguageMetrics.faceStability.score;
+      }, 0);
+      var stabilityAverage = Math.round(stabilityTotal / stabilityEntries.length);
+      stabilitySummary.textContent = "平均的な顔位置の安定度: " + stabilityAverage + "/100（参考値）";
+    } else {
+      // 録画当時にFaceDetectorが使えたかどうかは、閲覧中ブラウザの対応状況ではなく
+      // 記録時にstopBodyLanguageSampling()が保存したunavailableReasonで判定する
+      // （履歴を別のブラウザで開いた場合でも当時の状況が正しく表示されるようにするため）。
+      var unsupportedAtRecording = usedEntries.some(function (entry) {
+        return entry.bodyLanguageMetrics.faceStability &&
+          entry.bodyLanguageMetrics.faceStability.unavailableReason === "unsupported";
+      });
+      stabilitySummary.textContent = unsupportedAtRecording
+        ? "顔位置の安定度: この環境（ブラウザ）では利用できません（映像の変化量のみ分析対象です）。"
+        : "顔位置の安定度: 顔を検出できなかったため、今回は算出できませんでした。";
+    }
+    container.appendChild(stabilitySummary);
+
+    var list = document.createElement("ul");
+    list.className = "feedback-list";
+    entries.forEach(function (entry) {
+      var metrics = entry.bodyLanguageMetrics;
+      var item = document.createElement("li");
+      if (!metrics || !metrics.available) {
+        item.textContent = "質問" + entry.questionNumber + ": カメラ映像なし";
+        list.appendChild(item);
+        return;
+      }
+      var parts = [];
+      if (metrics.motionLevel && metrics.motionLevel.available && typeof metrics.motionLevel.score === "number" &&
+        Number.isFinite(metrics.motionLevel.score)) {
+        parts.push("変化量" + Math.round(metrics.motionLevel.score) + "/100");
+      }
+      if (metrics.faceStability && metrics.faceStability.available && typeof metrics.faceStability.score === "number" &&
+        Number.isFinite(metrics.faceStability.score)) {
+        parts.push("安定度" + Math.round(metrics.faceStability.score) + "/100");
+      }
+      item.textContent = "質問" + entry.questionNumber + ": " + (parts.length ? parts.join(" / ") : "算出不可");
       list.appendChild(item);
     });
     container.appendChild(list);
@@ -4716,6 +4846,7 @@
       var fillerNote = document.createElement("p");
       var paceNote = document.createElement("p");
       var responseTimeNote = document.createElement("p");
+      var bodyLanguageNote = document.createElement("p");
       var e = document.createElement("p");
       var deepDive = document.createElement("p");
       var followUpReason = document.createElement("p");
@@ -4742,6 +4873,21 @@
       responseTimeNote.textContent = "回答時間: " + (typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0
         ? formatDuration(entry.responseTimeMs)
         : "計測不可");
+      bodyLanguageNote.className = "item-meta";
+      if (entry.bodyLanguageMetrics && entry.bodyLanguageMetrics.available) {
+        var blParts = [];
+        if (entry.bodyLanguageMetrics.motionLevel && entry.bodyLanguageMetrics.motionLevel.available &&
+          typeof entry.bodyLanguageMetrics.motionLevel.score === "number" &&
+          Number.isFinite(entry.bodyLanguageMetrics.motionLevel.score)) {
+          blParts.push("変化量" + Math.round(entry.bodyLanguageMetrics.motionLevel.score) + "/100");
+        }
+        if (entry.bodyLanguageMetrics.faceStability && entry.bodyLanguageMetrics.faceStability.available &&
+          typeof entry.bodyLanguageMetrics.faceStability.score === "number" &&
+          Number.isFinite(entry.bodyLanguageMetrics.faceStability.score)) {
+          blParts.push("安定度" + Math.round(entry.bodyLanguageMetrics.faceStability.score) + "/100");
+        }
+        bodyLanguageNote.textContent = "映像の傾向（参考値）: " + (blParts.length ? blParts.join(" / ") : "算出不可");
+      }
       e.textContent = "評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし");
       deepDive.textContent = "深掘り質問: " + (entry.evaluation && entry.evaluation.deepDiveQuestion ? entry.evaluation.deepDiveQuestion : "なし");
       followUpReason.textContent = "追加確認の理由: " + (entry.evaluation && entry.evaluation.followUpReason ? entry.evaluation.followUpReason : "なし");
@@ -4756,6 +4902,9 @@
       block.appendChild(fillerNote);
       block.appendChild(paceNote);
       block.appendChild(responseTimeNote);
+      if (entry.bodyLanguageMetrics && entry.bodyLanguageMetrics.available) {
+        block.appendChild(bodyLanguageNote);
+      }
       block.appendChild(e);
       block.appendChild(deepDive);
       block.appendChild(followUpReason);
@@ -4836,6 +4985,22 @@
       lines.push("A. " + (entry.answer || ""));
       if (typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0) {
         lines.push("回答時間: " + formatDuration(entry.responseTimeMs));
+      }
+      if (entry.bodyLanguageMetrics && entry.bodyLanguageMetrics.available) {
+        var textBlParts = [];
+        if (entry.bodyLanguageMetrics.motionLevel && entry.bodyLanguageMetrics.motionLevel.available &&
+          typeof entry.bodyLanguageMetrics.motionLevel.score === "number" &&
+          Number.isFinite(entry.bodyLanguageMetrics.motionLevel.score)) {
+          textBlParts.push("変化量" + Math.round(entry.bodyLanguageMetrics.motionLevel.score) + "/100");
+        }
+        if (entry.bodyLanguageMetrics.faceStability && entry.bodyLanguageMetrics.faceStability.available &&
+          typeof entry.bodyLanguageMetrics.faceStability.score === "number" &&
+          Number.isFinite(entry.bodyLanguageMetrics.faceStability.score)) {
+          textBlParts.push("安定度" + Math.round(entry.bodyLanguageMetrics.faceStability.score) + "/100");
+        }
+        if (textBlParts.length) {
+          lines.push("映像の傾向（参考値）: " + textBlParts.join(" / "));
+        }
       }
       lines.push("評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし"));
       if (entry.evaluation && entry.evaluation.deepDiveQuestion) {
@@ -5441,6 +5606,11 @@
   }
 
   function stopCameraMediaStream() {
+    try {
+      clearBodyLanguageSamplingInterval();
+    } catch (error) {
+      console.warn("Body language sampling interval could not be cleared during teardown:", error);
+    }
     if (cameraInputState.mediaRecorder && cameraInputState.mediaRecorder.state !== "inactive") {
       try {
         cameraInputState.mediaRecorder.stop();
@@ -5525,6 +5695,245 @@
     return clip;
   }
 
+  function isFaceDetectorSupported() {
+    return typeof window.FaceDetector === "function";
+  }
+
+  function setupFaceDetectorForSampling() {
+    cameraInputState.faceDetector = null;
+    cameraInputState.faceDetectorSupported = false;
+    if (!isFaceDetectorSupported()) {
+      return;
+    }
+    try {
+      cameraInputState.faceDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+      // API自体はあってもコンストラクタが失敗する環境があるため、実際に初期化できた
+      // 場合だけ「対応している」とみなす。この値をサンプリング終了時の結果に焼き込み、
+      // 履歴表示時は閲覧中ブラウザの対応状況ではなく録画当時の値を使う。
+      cameraInputState.faceDetectorSupported = true;
+    } catch (error) {
+      cameraInputState.faceDetector = null;
+      console.warn("FaceDetector could not be initialized:", error);
+    }
+  }
+
+  function ensureBodyLanguageSampleCanvas() {
+    if (cameraInputState.sampleCanvas && cameraInputState.sampleCanvasCtx) {
+      return;
+    }
+    try {
+      var canvas = document.createElement("canvas");
+      canvas.width = BODY_LANGUAGE_SAMPLE_WIDTH;
+      canvas.height = BODY_LANGUAGE_SAMPLE_HEIGHT;
+      cameraInputState.sampleCanvas = canvas;
+      cameraInputState.sampleCanvasCtx = canvas.getContext("2d", { willReadFrequently: true });
+    } catch (error) {
+      cameraInputState.sampleCanvas = null;
+      cameraInputState.sampleCanvasCtx = null;
+      console.warn("Body language sample canvas could not be created:", error);
+    }
+  }
+
+  // videoを縮小したオフスクリーンcanvasをグレースケール化し、前フレームとの平均絶対差分（0-255スケール、正規化前）を返す。
+  // 差分を取れる前フレームがまだない場合はnullを返す。
+  function sampleMotionDiff(video) {
+    var canvas = cameraInputState.sampleCanvas;
+    var ctx = cameraInputState.sampleCanvasCtx;
+    if (!canvas || !ctx) {
+      return null;
+    }
+    try {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      var frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var pixelCount = canvas.width * canvas.height;
+      var gray = new Float32Array(pixelCount);
+      for (var i = 0; i < pixelCount; i += 1) {
+        var offset = i * 4;
+        gray[i] = frame.data[offset] * 0.299 + frame.data[offset + 1] * 0.587 + frame.data[offset + 2] * 0.114;
+      }
+      var diff = null;
+      if (cameraInputState.lastFrameData && cameraInputState.lastFrameData.length === pixelCount) {
+        var sum = 0;
+        for (var j = 0; j < pixelCount; j += 1) {
+          sum += Math.abs(gray[j] - cameraInputState.lastFrameData[j]);
+        }
+        diff = sum / pixelCount;
+      }
+      cameraInputState.lastFrameData = gray;
+      return diff;
+    } catch (error) {
+      console.warn("Motion diff sampling failed:", error);
+      return null;
+    }
+  }
+
+  // FaceDetectorで検出した最初の顔の中心座標を、video解像度に対する0-1の相対座標として返す。未検出・失敗時はnull。
+  async function detectFacePosition(video) {
+    if (!cameraInputState.faceDetector || !video.videoWidth || !video.videoHeight) {
+      return null;
+    }
+    try {
+      var faces = await cameraInputState.faceDetector.detect(video);
+      if (!faces || !faces.length || !faces[0].boundingBox) {
+        return null;
+      }
+      var box = faces[0].boundingBox;
+      return {
+        x: (box.x + box.width / 2) / video.videoWidth,
+        y: (box.y + box.height / 2) / video.videoHeight
+      };
+    } catch (error) {
+      console.warn("Face detection failed:", error);
+      return null;
+    }
+  }
+
+  function clearBodyLanguageSamplingInterval() {
+    if (cameraInputState.samplingIntervalId !== null) {
+      clearInterval(cameraInputState.samplingIntervalId);
+      cameraInputState.samplingIntervalId = null;
+    }
+  }
+
+  // sessionIdは呼び出し時点のcameraInputState.samplingSessionIdを閉じ込めておき、
+  // 非同期の顔検出待ち中に次の質問のstopBodyLanguageSampling()が呼ばれて
+  // サンプル配列がリセットされても、古いtickの結果を新しい配列へ混入させないためのガード。
+  function runBodyLanguageSamplingTick(video, sessionId) {
+    if (cameraInputState.samplingTickInProgress) {
+      return;
+    }
+    cameraInputState.samplingTickInProgress = true;
+    Promise.resolve()
+      .then(async function () {
+        if (!video || !video.videoWidth || !video.videoHeight) {
+          return;
+        }
+        cameraInputState.samplingTickCount += 1;
+        var motionDiff = sampleMotionDiff(video);
+        var facePosition = null;
+        // 顔検出は重いため、動き検出より低頻度（2回に1回）で実行する。
+        if (cameraInputState.faceDetector && cameraInputState.samplingTickCount % 2 === 0) {
+          facePosition = await detectFacePosition(video);
+        }
+        if (cameraInputState.samplingSessionId !== sessionId) {
+          // 待っている間に質問が切り替わっていたら、このtickの結果は捨てる。
+          return;
+        }
+        cameraInputState.bodyLanguageSamples.push({
+          facePosition: facePosition,
+          motionDiff: motionDiff
+        });
+      })
+      .catch(function (error) {
+        console.warn("Body language sampling tick failed:", error);
+      })
+      .then(function () {
+        cameraInputState.samplingTickInProgress = false;
+      });
+  }
+
+  // 質問ごとの録画開始に合わせて呼び出す。FaceDetectorのfeature detection、
+  // オフスクリーンcanvasの準備、サンプリング用setIntervalの起動を行う。
+  // 失敗しても面接の進行・MediaRecorderでの録画自体には一切影響させない。
+  function startBodyLanguageSampling() {
+    try {
+      clearBodyLanguageSamplingInterval();
+      cameraInputState.bodyLanguageSamples = [];
+      cameraInputState.lastFrameData = null;
+      cameraInputState.samplingTickCount = 0;
+      cameraInputState.samplingTickInProgress = false;
+      cameraInputState.samplingSessionId += 1;
+      var sessionId = cameraInputState.samplingSessionId;
+      ensureBodyLanguageSampleCanvas();
+      setupFaceDetectorForSampling();
+      var video = $("cameraSelfPreview");
+      if (!video || !cameraInputState.sampleCanvas) {
+        return;
+      }
+      // 質問が短時間で回答された場合でも最低1件の動き量サンプルを確保できるよう、
+      // intervalの初回発火を待たずに即座に1回サンプリングしておく（1回目は前フレームが
+      // ないためmotionDiffはnullになるが、2回目以降の差分計算の基準フレームにはなる）。
+      runBodyLanguageSamplingTick(video, sessionId);
+      cameraInputState.samplingIntervalId = setInterval(function () {
+        runBodyLanguageSamplingTick(video, sessionId);
+      }, BODY_LANGUAGE_SAMPLE_INTERVAL_MS);
+    } catch (error) {
+      console.warn("Body language sampling could not be started:", error);
+    }
+  }
+
+  function createUnavailableBodyLanguageMetrics() {
+    return {
+      available: false,
+      faceStability: { available: false, score: null, sampleCount: 0, unavailableReason: "no_camera" },
+      motionLevel: { available: false, score: null, sampleCount: 0 }
+    };
+  }
+
+  // setIntervalを止め、蓄積したサンプルからfaceStability/motionLevelスコアを集計して返す
+  // （motionLevelは0-100で高いほど「動きが大きい」、faceStabilityは0-100で高いほど「位置が安定」という
+  // 意味であり、どちらも「高い=良い」という評価ではない。単なる傾向の目安値）。
+  // 次の質問のサンプリングに影響しないよう、蓄積状態もリセットする。
+  function stopBodyLanguageSampling() {
+    var result = createUnavailableBodyLanguageMetrics();
+    result.faceStability.unavailableReason = cameraInputState.faceDetectorSupported ? "not_detected" : "unsupported";
+    try {
+      clearBodyLanguageSamplingInterval();
+      // 進行中の非同期tickが古いsessionIdの結果を誤って新しい配列にpushしないよう、
+      // ここでsessionを進めておく（runBodyLanguageSamplingTick側のガードと対になる）。
+      cameraInputState.samplingSessionId += 1;
+      var samples = cameraInputState.bodyLanguageSamples || [];
+
+      var motionValues = samples
+        .map(function (sample) { return sample.motionDiff; })
+        .filter(function (value) { return typeof value === "number" && isFinite(value); });
+      if (motionValues.length > 0) {
+        var avgMotion = motionValues.reduce(function (sum, value) { return sum + value; }, 0) / motionValues.length;
+        var motionScore = Math.max(0, Math.min(100, (avgMotion / BODY_LANGUAGE_MAX_MOTION_DIFF) * 100));
+        result.motionLevel = {
+          available: true,
+          score: Math.round(motionScore),
+          sampleCount: motionValues.length
+        };
+      }
+
+      var facePositions = samples
+        .map(function (sample) { return sample.facePosition; })
+        .filter(function (position) {
+          return position && typeof position.x === "number" && typeof position.y === "number";
+        });
+      if (facePositions.length > 0) {
+        var meanX = facePositions.reduce(function (sum, position) { return sum + position.x; }, 0) / facePositions.length;
+        var meanY = facePositions.reduce(function (sum, position) { return sum + position.y; }, 0) / facePositions.length;
+        var varianceSum = facePositions.reduce(function (sum, position) {
+          var dx = position.x - meanX;
+          var dy = position.y - meanY;
+          return sum + (dx * dx + dy * dy);
+        }, 0);
+        var spread = Math.sqrt(varianceSum / facePositions.length);
+        var stabilityScore = Math.max(0, Math.min(100, (1 - spread / BODY_LANGUAGE_MAX_FACE_SPREAD) * 100));
+        result.faceStability = {
+          available: true,
+          score: Math.round(stabilityScore),
+          sampleCount: facePositions.length
+        };
+      }
+
+      // 「サンプルを1件でも取れたか」ではなく「実際に使えるスコアが1つでもあるか」で判定する。
+      // 1件目のtickはmotionDiffの基準フレームを作るだけでスコアにならないため、これがないと
+      // 短時間の回答でサンプル自体は残るのにavailable:trueだけが立つケースがあった。
+      result.available = result.motionLevel.available || result.faceStability.available;
+    } catch (error) {
+      console.warn("Body language sampling could not be finalized:", error);
+    } finally {
+      cameraInputState.bodyLanguageSamples = [];
+      cameraInputState.lastFrameData = null;
+      cameraInputState.samplingTickCount = 0;
+      cameraInputState.samplingTickInProgress = false;
+    }
+    return result;
+  }
+
   function startCameraRecording() {
     if (!cameraInputState.isEnabled || !cameraInputState.isSupported || !cameraInputState.mediaStream || !window.MediaRecorder) {
       return;
@@ -5561,6 +5970,7 @@
       });
       recorder.start();
       cameraInputState.isRecording = true;
+      startBodyLanguageSampling();
     } catch (error) {
       cameraInputState.isRecording = false;
       cameraInputState.recordingStopPromise = null;
@@ -5570,6 +5980,12 @@
   }
 
   function stopCameraRecording() {
+    try {
+      cameraInputState.lastBodyLanguageMetrics = stopBodyLanguageSampling();
+    } catch (error) {
+      cameraInputState.lastBodyLanguageMetrics = null;
+      console.warn("Body language sampling could not be finalized on stop:", error);
+    }
     if (cameraInputState.mediaRecorder && cameraInputState.mediaRecorder.state !== "inactive") {
       cameraInputState.mediaRecorder.stop();
       return cameraInputState.recordingStopPromise || Promise.resolve(null);
