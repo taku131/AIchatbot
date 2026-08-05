@@ -31,6 +31,14 @@ JavaScript の構文確認:
 npm run check
 ```
 
+自動テスト（Node標準の `node:test` を使用、追加の依存関係は不要）:
+
+```powershell
+npm test
+```
+
+`test/` 配下の `*.test.js` を実行します。
+
 ## 使い方
 
 1. `ES管理` でアカウント、企業、ES設問、ES回答を登録します。

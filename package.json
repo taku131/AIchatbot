@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.mjs",
     "check": "node --check ai-interview-prototype/script.js && node --check ai-interview-prototype/firebase-cloud.js && node --check ai-interview-prototype/firebase-config.js && node --check server.mjs",
+    "test": "node --test \"test/**/*.test.js\"",
     "firebase:deploy:rules": "firebase deploy --only firestore:rules"
   },
   "engines": {

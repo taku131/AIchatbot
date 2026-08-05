@@ -1820,6 +1820,13 @@
     renderWorkspace();
   }
 
+  // maxCharsがnull/0以下（制限なし）の場合は常にtrue。それ以外はanswerText.lengthとの比較。
+  function isEsAnswerWithinLimit(answerText, maxChars) {
+    var text = typeof answerText === "string" ? answerText : String(answerText || "");
+    var hasLimit = Number.isFinite(maxChars) && maxChars > 0;
+    return !hasLimit || text.length <= maxChars;
+  }
+
   function saveEsFromForm(event) {
     if (event && typeof event.preventDefault === "function") {
       event.preventDefault();
@@ -1840,7 +1847,7 @@
     var maxChars = parseInt(getValue("esMaxCharsInput", ""), 10);
     var hasMaxChars = Number.isFinite(maxChars) && maxChars > 0;
     var answerText = getRawValue("esAnswerInput", "");
-    if (hasMaxChars && answerText.length > maxChars) {
+    if (!isEsAnswerWithinLimit(answerText, hasMaxChars ? maxChars : null)) {
       setText("esCharCount", "文字数制限（" + maxChars + "文字）を超えています。回答を短くしてから保存してください。");
       return;
     }
@@ -5202,14 +5209,10 @@
     anchor.insertAdjacentElement("afterend", chart);
   }
 
-  function renderHistoryScoreChart(filteredLogs) {
-    var body = $("historyScoreChartBody");
-    if (!body) {
-      return;
-    }
-    body.textContent = "";
-
-    var points = (filteredLogs || [])
+  // スコア推移グラフ用に、ログ配列を{score, dateLabel}の配列へ整形する（DOM非依存の純粋関数）。
+  // finalFeedback.finalScoreが数値のログだけを対象に、日時の古い順に並べる。
+  function buildHistoryScoreChartPoints(logs) {
+    return (logs || [])
       .filter(function (log) {
         return log.finalFeedback && typeof log.finalFeedback.finalScore === "number";
       })
@@ -5223,6 +5226,16 @@
           dateLabel: formatDate(log.savedAt || log.finishedAt || log.startedAt)
         };
       });
+  }
+
+  function renderHistoryScoreChart(filteredLogs) {
+    var body = $("historyScoreChartBody");
+    if (!body) {
+      return;
+    }
+    body.textContent = "";
+
+    var points = buildHistoryScoreChartPoints(filteredLogs);
 
     if (points.length < 2) {
       var empty = document.createElement("p");
@@ -7039,6 +7052,38 @@
   window.generateFinalFeedback = generateFinalFeedback;
   window.saveInterviewLog = saveInterviewLog;
   window.loadInterviewLogs = loadInterviewLogs;
+
+  // 以下はNodeの自動テスト（test/配下）から純粋ロジックを直接呼び出すための公開。
+  // ブラウザでの通常利用（UIからの操作）には一切影響しない。
+  window.appState = appState;
+  window.cloudState = cloudState;
+  window.normalizeCategory = normalizeCategory;
+  window.makeId = makeId;
+  window.isEsAnswerWithinLimit = isEsAnswerWithinLimit;
+  window.loadAccounts = loadAccounts;
+  window.saveAccounts = saveAccounts;
+  window.loadCompanies = loadCompanies;
+  window.saveCompanies = saveCompanies;
+  window.loadEsEntries = loadEsEntries;
+  window.saveEsEntries = saveEsEntries;
+  window.saveInterviewLogs = saveInterviewLogs;
+  window.getAccountCompanies = getAccountCompanies;
+  window.getAccountEsEntries = getAccountEsEntries;
+  window.getAccountInterviewLogs = getAccountInterviewLogs;
+  window.deleteCompany = deleteCompany;
+  window.deleteEsEntry = deleteEsEntry;
+  window.deleteAccountCascade = deleteAccountCascade;
+  window.deleteInterviewLog = deleteInterviewLog;
+  window.countFillerWords = countFillerWords;
+  window.calculateSpeakingPace = calculateSpeakingPace;
+  window.scoreAnswer = scoreAnswer;
+  window.pickBankQuestion = pickBankQuestion;
+  window.isSimilarQuestion = isSimilarQuestion;
+  window.computeAchievements = computeAchievements;
+  window.getHistoryLogTimestamp = getHistoryLogTimestamp;
+  window.getHistoryLogScore = getHistoryLogScore;
+  window.applyHistoryFilterAndSort = applyHistoryFilterAndSort;
+  window.buildHistoryScoreChartPoints = buildHistoryScoreChartPoints;
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
