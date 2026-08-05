@@ -877,6 +877,42 @@ textarea:focus {
   margin-top: 18px;
 }
 
+.star-guide-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  padding: 10px 12px;
+}
+
+.star-guide-summary {
+  cursor: pointer;
+  color: var(--primary-dark);
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.star-guide-panel[open] .star-guide-body {
+  margin-top: 10px;
+}
+
+.star-guide-intro {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.star-guide-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
 .interview-status {
   min-height: 40px;
   background: transparent;
@@ -976,6 +1012,33 @@ textarea:focus {
   background: var(--surface-soft);
 }
 
+.camera-preview-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  max-width: 320px;
+}
+
+.camera-self-preview {
+  width: 100%;
+  max-height: 240px;
+  border-radius: var(--radius);
+  background: #000;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.camera-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
 .score-breakdown {
   display: grid;
   gap: 10px;
@@ -1048,6 +1111,45 @@ textarea:focus {
 
 .audio-review-item audio {
   width: 100%;
+}
+
+.video-review-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.body-language-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.video-review-list {
+  display: grid;
+  gap: 12px;
+}
+
+.video-review-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.video-review-item p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.video-review-item video {
+  width: 100%;
+  max-height: 360px;
+  border-radius: var(--radius);
+  background: #000;
 }
 
 .two-column-list {
@@ -1148,6 +1250,85 @@ textarea:focus {
   margin: 0;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.history-achievements-panel {
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.history-achievements-panel h3 {
+  margin: 0 0 6px;
+}
+
+.history-achievements-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.achievement-badge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.achievement-badge {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.achievement-badge.is-earned {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.achievement-badge.is-locked {
+  color: var(--muted);
+}
+
+.achievement-badge-title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.achievement-badge.is-earned .achievement-badge-title {
+  font-weight: 800;
+  color: var(--primary-dark);
+}
+
+.achievement-badge.is-locked .achievement-badge-title {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.achievement-badge-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.achievement-badge-status {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--primary-dark);
+}
+
+.achievement-badge-progress {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
 .history-list {
@@ -1294,8 +1475,13 @@ textarea:focus {
   .answer-panel,
   .feedback-block,
   .history-list-panel,
-  .history-detail-panel {
+  .history-detail-panel,
+  .history-achievements-panel {
     padding: 14px;
+  }
+
+  .achievement-badge-grid {
+    grid-template-columns: 1fr;
   }
 
   .button {

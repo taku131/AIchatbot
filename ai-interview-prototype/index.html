@@ -282,6 +282,14 @@
           </select>
         </div>
         <div class="field">
+          <label for="questionSourceSelect">質問の出題方法</label>
+          <select id="questionSourceSelect" name="questionSource">
+            <option value="ai" selected>AIによる動的生成</option>
+            <option value="bank">定番質問集から出題</option>
+          </select>
+          <p class="field-help">定番質問集モードでは、カテゴリに合った定番質問を順番に出題します。使い切ると自動的にAI生成に切り替わります。深掘り質問は引き続きAIが生成します。</p>
+        </div>
+        <div class="field">
           <label for="interviewerTypeSelect">AI面接官タイプ</label>
           <input id="interviewerTypeSelect" name="interviewerType" type="hidden" value="friendly">
           <div id="interviewerAvatarGrid" class="interviewer-avatar-grid" role="radiogroup" aria-label="AI面接官タイプ"></div>
@@ -299,6 +307,13 @@
         <div class="field field-wide">
           <label for="userProfileInput">自分用メモ</label>
           <textarea id="userProfileInput" name="userProfile" rows="7" placeholder="学歴、研究、開発経験、強み、志望理由、今日の面接で詰まった質問など"></textarea>
+        </div>
+        <div class="field field-wide">
+          <label class="checkbox-label" for="cameraEnabledInput">
+            <input id="cameraEnabledInput" name="cameraEnabled" type="checkbox">
+            カメラで自分の様子を録画しながら練習する（任意）
+          </label>
+          <p id="cameraConsentHelp" class="field-help">有効にすると面接開始時にブラウザからカメラ・マイクへのアクセス許可を求められます。録画はこのセッション中のみブラウザ内に保持され、面接を終了・再スタートすると自動的に破棄されます。外部のサーバーには送信されません。</p>
         </div>
         <div id="sourceEsPreview" class="source-es-preview field-wide" hidden>
           <p class="panel-label">Interview Dataset</p>
@@ -319,6 +334,11 @@
           <h2 id="interviewTitle">面接チャット</h2>
         </div>
         <p id="progressText" class="progress-text">質問 0 / 0</p>
+      </div>
+
+      <div id="cameraPreviewPanel" class="camera-preview-panel" hidden>
+        <video id="cameraSelfPreview" class="camera-self-preview" autoplay muted playsinline aria-label="カメラのセルフプレビュー（自分の映像、音声はミュートされています）"></video>
+        <p id="cameraStatus" class="camera-status" role="status" aria-live="polite"></p>
       </div>
 
       <div class="interview-layout">
@@ -348,6 +368,18 @@
 
       <div class="answer-panel">
         <label for="answerInput">あなたの回答</label>
+        <details class="star-guide-panel">
+          <summary class="star-guide-summary">回答の組み立て方（STAR法）を見る</summary>
+          <div class="star-guide-body">
+            <p class="star-guide-intro">まず結論を一言で伝えたうえで、以下の順に具体的に話すと伝わりやすくなります。</p>
+            <ul class="star-guide-list">
+              <li><strong>状況 (Situation)</strong>: どんな場面・立場での出来事だったか</li>
+              <li><strong>課題 (Task)</strong>: 何を達成・解決する必要があったか</li>
+              <li><strong>行動 (Action)</strong>: 自分が具体的に何を考え、どう行動したか</li>
+              <li><strong>結果 (Result)</strong>: 行動の結果どうなったか、そこから何を学んだか</li>
+            </ul>
+          </div>
+        </details>
         <textarea id="answerInput" name="answer" rows="6" placeholder="面接で話すつもりで回答してください。Ctrl + Enter でも送信できます。"></textarea>
         <div class="voice-input-panel" aria-label="音声入力">
           <div class="voice-input-actions">
@@ -405,10 +437,24 @@
           <h3 id="speechMetricsTitle">話し方の分析</h3>
           <div id="speechMetricsSummary" class="speech-metrics-summary"></div>
         </section>
+        <section class="feedback-block field-wide" aria-labelledby="responseTimeTitle">
+          <h3 id="responseTimeTitle">回答時間の分析</h3>
+          <div id="responseTimeSummary" class="speech-metrics-summary"></div>
+        </section>
+        <section class="feedback-block field-wide" aria-labelledby="bodyLanguageTitle">
+          <h3 id="bodyLanguageTitle">映像の傾向分析</h3>
+          <p class="body-language-note">この分析はカメラ映像から算出した簡易的な傾向の目安であり、表情・視線・印象の断定的な評価ではありません。あくまで参考情報としてご利用ください。</p>
+          <div id="bodyLanguageSummary" class="speech-metrics-summary"></div>
+        </section>
         <section class="feedback-block field-wide" aria-labelledby="audioReviewTitle">
           <h3 id="audioReviewTitle">音声確認</h3>
           <p class="audio-review-note">録音はこの画面を開いている間だけ確認できます。履歴には文字起こしだけ保存されます。</p>
           <div id="audioReviewList" class="audio-review-list"></div>
+        </section>
+        <section class="feedback-block field-wide" aria-labelledby="videoReviewTitle">
+          <h3 id="videoReviewTitle">映像確認</h3>
+          <p class="video-review-note">録画はこの画面を開いている間だけ確認できます。長期保存はされません。</p>
+          <div id="videoReviewList" class="video-review-list"></div>
         </section>
       </div>
 
@@ -425,6 +471,12 @@
         </div>
         <button id="clearHistoryBtn" class="button button-danger" type="button">履歴を全削除</button>
       </div>
+
+      <section class="history-achievements-panel" aria-labelledby="achievementBadgesTitle">
+        <h3 id="achievementBadgesTitle">達成バッジ</h3>
+        <p class="history-achievements-note">これまでの練習全体の記録をもとに判定されます。一覧の絞り込み条件には影響されません。</p>
+        <div id="achievementBadges" class="achievement-badge-grid"></div>
+      </section>
 
       <div class="history-layout">
         <section class="history-list-panel" aria-labelledby="historyListTitle">

@@ -18,11 +18,13 @@
     interviewType: "first",
     targetType: "new-graduate",
     category: "self_pr",
+    questionSource: "ai",
     interviewerType: "friendly",
     interviewerTypeMode: "fixed",
     interviewerTypeSelection: "friendly",
     questionCount: 5,
-    userProfile: ""
+    userProfile: "",
+    cameraEnabled: false
   };
 
   var DEFAULT_AI_SETTINGS = {
@@ -98,12 +100,144 @@
     return "self_pr";
   }
 
+  var STAR_QUESTION_BANK = {
+    self_pr: [
+      "自己PRをしてください。",
+      "あなたの強みを、エピソードを交えて教えてください。",
+      "その強みは、当社のどんな場面で活かせると思いますか。",
+      "周囲の人から、あなたはどんな人だと言われますか。",
+      "自己PRの中で、特に自信を持っているエピソードを一つ詳しく教えてください。"
+    ],
+    motivation: [
+      "当社を志望する理由を教えてください。",
+      "数ある企業の中で、なぜ当社に興味を持ったのですか。",
+      "当社でどのような仕事をしたいと考えていますか。",
+      "業界研究の中で、当社を選んだ決め手は何ですか。",
+      "入社後に成し遂げたいことを教えてください。",
+      "他社ではなく当社でなければならない理由は何ですか。"
+    ],
+    student_life: [
+      "学生時代に最も力を入れたことを教えてください。",
+      "その経験の中で、あなたはどのような役割を担いましたか。",
+      "目標に向けて、具体的にどのような行動を取りましたか。",
+      "その取り組みの中で直面した困難と、乗り越え方を教えてください。",
+      "その経験から得た学びを、今後どう活かしたいですか。"
+    ],
+    strength_weakness: [
+      "あなたの長所と短所を教えてください。",
+      "短所によって困った経験と、その対処法を教えてください。",
+      "長所を発揮して成果を出したエピソードを教えてください。",
+      "短所を克服するために、日頃取り組んでいることはありますか。",
+      "周囲と比べて、自分ならではの強みだと思う点は何ですか。"
+    ],
+    research: [
+      "現在取り組んでいる研究内容を教えてください。",
+      "その研究テーマを選んだ理由を教えてください。",
+      "研究を進める中で、最も苦労した点は何ですか。",
+      "研究の独自性や工夫している点を教えてください。",
+      "研究を通じて身についた力を、仕事にどう活かしたいですか。"
+    ],
+    development: [
+      "これまでに開発した成果物について教えてください。",
+      "その開発において、あなたが担当した役割を教えてください。",
+      "技術選定の際に、どのような基準で判断しましたか。",
+      "開発中に発生した課題と、解決のために取った行動を教えてください。",
+      "その開発を通じて得た学びを教えてください。",
+      "チームでの開発経験があれば、どのように役割分担をしましたか。"
+    ],
+    team: [
+      "チームで何かに取り組んだ経験を教えてください。",
+      "そのチームの中で、あなたはどのような役割を担いましたか。",
+      "チーム内で意見が対立した際、どのように対応しましたか。",
+      "チームの成果を高めるために、あなたが工夫したことは何ですか。",
+      "リーダーシップを発揮した経験があれば教えてください。"
+    ],
+    failure: [
+      "これまでに経験した失敗について教えてください。",
+      "その失敗の原因は何だったと分析していますか。",
+      "失敗した後、どのように立て直しましたか。",
+      "その失敗から得た教訓を、今どう活かしていますか。",
+      "失敗を恐れずに挑戦した経験があれば教えてください。"
+    ],
+    career: [
+      "将来のキャリアプランを教えてください。",
+      "5年後、10年後にどのような人材像になっていたいですか。",
+      "当社でどのように成長していきたいと考えていますか。",
+      "キャリアを考える上で、最も大切にしている価値観は何ですか。",
+      "希望する職種以外に興味のある分野はありますか。"
+    ],
+    reverse_question: [
+      "最後に何か質問はありますか。",
+      "当社について、聞いておきたいことはありますか。",
+      "配属後の働き方について、気になる点はありますか。",
+      "入社までに準備しておくとよいことはありますか。",
+      "面接を受けてみて、当社に対する印象は変わりましたか。"
+    ]
+  };
+
+  // 面接タイプによって聞き方の重心が変わるカテゴリだけ、上位互換の質問を
+  // interviewType×category単位で追加する（全組み合わせを埋めるのではなく、
+  // 面接タイプごとに意味のある差が出る組み合わせに絞る）。
+  // pickBankQuestion()はこちらを優先し、尽きたらSTAR_QUESTION_BANK[category]に続く。
+  var STAR_QUESTION_BANK_TYPE_OVERRIDES = {
+    technical: {
+      development: [
+        "技術面接の観点で伺います。今の技術スタックを選んだ理由と、代替案との比較を教えてください。",
+        "設計上、最もトレードオフに悩んだ判断とその根拠を教えてください。",
+        "本番運用後に見つかった問題があれば、原因の切り分け方と対応を教えてください。"
+      ]
+    },
+    research: {
+      research: [
+        "研究面接の観点で伺います。研究の目的と、それを検証するための手法の対応関係を説明してください。",
+        "先行研究と比べた独自性は何ですか。",
+        "研究成果の再現性・妥当性はどのように担保していますか。"
+      ]
+    },
+    final: {
+      career: [
+        "最終面接として伺います。入社後3年間で、どのように会社に貢献したいですか。",
+        "他社の選考状況を踏まえた上で、当社を選ぶ決め手を改めて教えてください。"
+      ],
+      motivation: [
+        "最終確認です。当社への入社意思は固まっていますか。理由も含めて教えてください。"
+      ]
+    },
+    intern: {
+      student_life: [
+        "インターンとして伺います。限られた期間でどう成果を出すか、学生時代の経験から教えてください。"
+      ],
+      motivation: [
+        "数あるインターン先の中で、当社を選んだ理由を教えてください。"
+      ]
+    },
+    hr: {
+      strength_weakness: [
+        "人事の観点から伺います。短所が原因でチームに影響が出た経験と、その後の対応を教えてください。"
+      ]
+    }
+  };
+
   var STATUS_LABELS = {
     draft: "下書き",
     reviewing: "推敲中",
     submitted: "提出済み",
     practice: "練習対象"
   };
+
+  var ACHIEVEMENT_DEFINITIONS = [
+    { id: "practice_1", category: "practice", threshold: 1, title: "はじめの一歩", description: "面接練習を1回完了" },
+    { id: "practice_5", category: "practice", threshold: 5, title: "習慣の芽生え", description: "面接練習を5回完了" },
+    { id: "practice_10", category: "practice", threshold: 10, title: "積み重ね", description: "面接練習を10回完了" },
+    { id: "practice_25", category: "practice", threshold: 25, title: "継続の力", description: "面接練習を25回完了" },
+    { id: "practice_50", category: "practice", threshold: 50, title: "練習の達人", description: "面接練習を50回完了" },
+    { id: "streak_3", category: "streak", threshold: 3, title: "3日連続練習", description: "3日連続で練習を完了" },
+    { id: "streak_7", category: "streak", threshold: 7, title: "1週間継続", description: "7日連続で練習を完了" },
+    { id: "streak_14", category: "streak", threshold: 14, title: "2週間継続", description: "14日連続で練習を完了" },
+    { id: "score_70", category: "score", threshold: 70, title: "70点到達", description: "70点以上のスコアを達成" },
+    { id: "score_90", category: "score", threshold: 90, title: "90点到達", description: "90点以上のスコアを達成" },
+    { id: "score_improve_10", category: "improvement", title: "スコア向上", description: "自己ベストを、最初に記録したスコアから10点以上更新" }
+  ];
 
   var INTERVIEW_TYPE_LABELS = {
     first: "一次面接",
@@ -269,7 +403,9 @@
     editingEsEntryId: null,
     currentExpectedAnswerData: null,
     currentQuestionTopic: null,
+    currentQuestionShownAt: null,
     audioClips: {},
+    videoClips: {},
     isBusy: false,
     historyFilter: {
       companyName: "",
@@ -327,6 +463,41 @@
     lastError: "",
     pendingClip: null
   };
+
+  var cameraInputState = {
+    mediaStream: null,
+    mediaRecorder: null,
+    videoChunks: [],
+    recordingStopPromise: null,
+    recordingStartedAt: null,
+    isSupported: false,
+    isEnabled: false,
+    isRecording: false,
+    pendingClip: null,
+    lastError: "",
+    bodyLanguageSamples: [],
+    faceDetector: null,
+    faceDetectorSupported: false,
+    samplingIntervalId: null,
+    samplingSessionId: 0,
+    samplingTickCount: 0,
+    samplingTickInProgress: false,
+    lastFrameData: null,
+    sampleCanvas: null,
+    sampleCanvasCtx: null,
+    lastBodyLanguageMetrics: null
+  };
+
+  // 表情・視線・姿勢の簡易分析（Issue #3）に関する調整用定数。
+  // 外部AI画像解析は使わず、ブラウザ内蔵のShape Detection API（あれば）と
+  // オフスクリーンcanvasでのフレーム差分のみで簡易スコアを算出する。
+  var BODY_LANGUAGE_SAMPLE_INTERVAL_MS = 500;
+  var BODY_LANGUAGE_SAMPLE_WIDTH = 64;
+  var BODY_LANGUAGE_SAMPLE_HEIGHT = 48;
+  // グレースケール(0-255)でのフレーム間平均絶対差分がこの値のとき「動きが大きい」= 100点とみなす経験則上の目安値。
+  var BODY_LANGUAGE_MAX_MOTION_DIFF = 40;
+  // 顔中心座標(0-1に正規化)のフレーム間RMSぶれがこの値のとき「安定度0点」とみなす経験則上の目安値。
+  var BODY_LANGUAGE_MAX_FACE_SPREAD = 0.15;
 
   var questionSpeechState = {
     isSupported: false,
@@ -2194,9 +2365,14 @@
       interviewType: getValue("interviewTypeSelect", DEFAULT_SETTINGS.interviewType),
       targetType: getValue("targetTypeSelect", DEFAULT_SETTINGS.targetType),
       category: normalizeCategory(getValue("categorySelect", DEFAULT_SETTINGS.category)),
+      questionSource: getValue("questionSourceSelect", DEFAULT_SETTINGS.questionSource),
       interviewerType: getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType),
       questionCount: Math.max(1, parseInt(getValue("questionCountSelect", DEFAULT_SETTINGS.questionCount), 10) || DEFAULT_SETTINGS.questionCount),
-      userProfile: getRawValue("userProfileInput", "")
+      userProfile: getRawValue("userProfileInput", ""),
+      cameraEnabled: (function () {
+        var checkbox = $("cameraEnabledInput");
+        return Boolean(checkbox && checkbox.checked);
+      })()
     };
   }
 
@@ -2900,6 +3076,30 @@
     });
   }
 
+  function pickBankQuestion(settings) {
+    var category = normalizeCategory(settings.category);
+    var interviewType = settings.interviewType;
+    var typeOverrides = (STAR_QUESTION_BANK_TYPE_OVERRIDES[interviewType] || {})[category] || [];
+    // 面接タイプに合わせたキュレーション（あれば）を先に出題し、
+    // 尽きたらカテゴリ共通の定番質問集に続ける。
+    var pool = typeOverrides.concat(STAR_QUESTION_BANK[category] || []);
+    for (var index = 0; index < pool.length; index += 1) {
+      if (!wasQuestionAsked(pool[index])) {
+        return pool[index];
+      }
+    }
+    return null;
+  }
+
+  // 定番質問集モードで出題する質問は、settings.categoryに対応するcoverage topic
+  // （initializeTopicCoverage()がcategory_<カテゴリ>という形で必ず1つ用意している）に
+  // 固定で紐づける。selectFallbackTopic()任せにすると、企業理解・技術判断など
+  // カテゴリ外のtopicが付いてしまい、出題内容とtopicがずれることがあるため。
+  function bankQuestionTopic(settings) {
+    var category = normalizeCategory(settings.category);
+    return findCoverageTopic("category_" + category) || createCategoryTopic(category);
+  }
+
   function getInterviewProgressSummary() {
     var turns = getPreviousTurns();
     return {
@@ -3264,6 +3464,14 @@
   }
 
   async function getInterviewQuestion(settings) {
+    if (settings.questionSource === "bank") {
+      var bankQuestion = pickBankQuestion(settings);
+      if (bankQuestion) {
+        applyQuestionTopic(bankQuestion, bankQuestionTopic(settings));
+        return bankQuestion;
+      }
+      // 定番質問集を使い切った場合は、以下の既存ロジック（AI生成→モック生成）にそのまま処理を続ける
+    }
     var topic = selectFallbackTopic(settings);
     try {
       var result = await callOpenAi(
@@ -3401,12 +3609,25 @@
         evaluation: normalized
       };
     }
-    var nextQuestion = normalized.nextQuestion;
+    var nextQuestion = null;
     var nextTopic = selectFallbackTopic(settings);
-    if (!nextQuestion || wasQuestionAsked(nextQuestion)) {
-      nextQuestion = await getInterviewQuestion(settings);
-    } else {
-      applyQuestionTopic(nextQuestion, nextTopic);
+    if (settings.questionSource === "bank") {
+      // 定番質問集モードでは、深掘り以外の通常の次問もバンクを優先する。
+      // AIが提案したnextQuestionを先に採用してしまうと、バンクを使い切るまで
+      // 順番に出題するという仕様を満たせないため。
+      var bankQuestion = pickBankQuestion(settings);
+      if (bankQuestion) {
+        nextQuestion = bankQuestion;
+        applyQuestionTopic(nextQuestion, bankQuestionTopic(settings));
+      }
+    }
+    if (!nextQuestion) {
+      nextQuestion = normalized.nextQuestion;
+      if (!nextQuestion || wasQuestionAsked(nextQuestion)) {
+        nextQuestion = await getInterviewQuestion(settings);
+      } else {
+        applyQuestionTopic(nextQuestion, nextTopic);
+      }
     }
     if (!nextQuestion || wasQuestionAsked(nextQuestion)) {
       nextQuestion = generateQuestion(Object.assign({}, settings || {}, {
@@ -3733,6 +3954,8 @@
       return;
     }
     releaseAudioClips();
+    releaseVideoClips();
+    stopCameraMediaStream();
     var settings = resolveInterviewerSettings(readSettings());
     var sourceCompanyId = settings.companyId || appState.pendingSourceCompanyId;
     var sourceCompany = sourceCompanyId ? findCompany(sourceCompanyId, appState.activeAccountId) : null;
@@ -3756,6 +3979,8 @@
     appState.pendingSourceCompanyId = sourceCompanyId || null;
     renderSourceEsPreview(sourceCompany, sourceEntries);
     appState.settings = settings;
+    cameraInputState.isEnabled = Boolean(settings.cameraEnabled);
+    cameraInputState.lastError = "";
     updateCurrentInterviewerAvatar(settings.interviewerType);
     appState.questionIndex = 0;
     appState.finished = false;
@@ -3784,12 +4009,19 @@
       timeline.textContent = "";
     }
     showView("interviewView");
+    if (cameraInputState.isEnabled) {
+      await setupCameraCapture();
+    } else {
+      stopCameraMediaStream();
+    }
     setBusy(true, "質問を生成中です...");
     appState.currentQuestion = await getInterviewQuestion(settings);
     setBusy(true, "評価基準を生成中です...");
     appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, settings);
     setText("currentQuestion", appState.currentQuestion);
+    appState.currentQuestionShownAt = Date.now();
     speakQuestion(appState.currentQuestion);
+    startCameraRecording();
     setText("feedbackSummary", "回答を入力してください。");
     setBusy(false);
     var answerInput = $("answerInput");
@@ -3817,6 +4049,18 @@
       await voiceInputState.recordingStopPromise;
     }
     return voiceInputState.pendingClip;
+  }
+
+  async function finalizeCameraCaptureBeforeSubmit() {
+    if (!cameraInputState.isEnabled || !cameraInputState.isSupported) {
+      return null;
+    }
+    if (cameraInputState.isRecording) {
+      await stopCameraRecording();
+    } else if (cameraInputState.recordingStopPromise) {
+      await cameraInputState.recordingStopPromise;
+    }
+    return cameraInputState.pendingClip;
   }
 
   function createTranscriptRecord(text, clip) {
@@ -3962,14 +4206,19 @@
     if (!appState.interviewLog || appState.finished || appState.isBusy) {
       return;
     }
-
-    var audioClip = await finalizeVoiceCaptureBeforeSubmit();
     var answerInput = $("answerInput");
     var answer = answerInput && typeof answerInput.value === "string" ? answerInput.value.trim() : "";
     if (!answer) {
       setText("feedbackSummary", "回答を入力してから送信してください。");
       return;
     }
+    var answerSubmittedAt = Date.now();
+
+    var audioClip = await finalizeVoiceCaptureBeforeSubmit();
+    var videoClip = await finalizeCameraCaptureBeforeSubmit();
+    var bodyLanguageMetrics = (cameraInputState.isEnabled && cameraInputState.isSupported && cameraInputState.lastBodyLanguageMetrics)
+      ? cameraInputState.lastBodyLanguageMetrics
+      : createUnavailableBodyLanguageMetrics();
 
     setBusy(true, "回答を評価中です...");
     var expectedAnswerData = appState.currentExpectedAnswerData || await getExpectedAnswerData(appState.currentQuestion, appState.settings);
@@ -3986,6 +4235,7 @@
       transcript: createTranscriptRecord(answer, audioClip),
       audio: createAudioMetadata(audioClip),
       audioClipId: audioClip ? audioClip.id : null,
+      videoClipId: videoClip ? videoClip.id : null,
       expectedAnswerData: expectedAnswerData,
       createdAt: new Date().toISOString()
     };
@@ -4011,11 +4261,18 @@
       transcript: message.transcript,
       audio: message.audio,
       audioClipId: message.audioClipId,
+      videoClipId: message.videoClipId,
       expectedAnswerData: expectedAnswerData,
-      evaluation: evaluationRecord
+      evaluation: evaluationRecord,
+      responseTimeMs: typeof appState.currentQuestionShownAt === "number"
+        ? (answerSubmittedAt - appState.currentQuestionShownAt)
+        : null,
+      bodyLanguageMetrics: bodyLanguageMetrics
     });
     voiceInputState.pendingClip = null;
     voiceInputState.finalTranscript = "";
+    cameraInputState.pendingClip = null;
+    cameraInputState.lastBodyLanguageMetrics = null;
     appState.questionIndex += 1;
 
     renderImmediateFeedback(evaluation);
@@ -4037,7 +4294,9 @@
     setBusy(true, "次の評価基準を生成中です...");
     appState.currentExpectedAnswerData = await getExpectedAnswerData(appState.currentQuestion, appState.settings);
     setText("currentQuestion", appState.currentQuestion);
+    appState.currentQuestionShownAt = Date.now();
     speakQuestion(appState.currentQuestion);
+    startCameraRecording();
     setText("progressText", "質問 " + (appState.questionIndex + 1) + " / " + appState.settings.questionCount);
     setText("feedbackSummary", nextQuestionPlan.isDeepDive
       ? (nextQuestionPlan.reason || "前の回答で確認しきれない点があるため、そこだけ追加で確認します。")
@@ -4084,6 +4343,7 @@
     if (!appState.interviewLog || appState.finished || appState.isBusy) {
       return;
     }
+    stopCameraMediaStream();
     setBusy(true, "最終フィードバックを作成中です...");
     appState.interviewLog.finishedAt = new Date().toISOString();
     appState.interviewLog.finalFeedback = await getFinalFeedback(appState.interviewLog);
@@ -4106,7 +4366,10 @@
     setText("revisionDirection", feedback.revisionDirection);
     appendListItems("nextPracticeList", feedback.nextPracticeList);
     renderSpeechMetricsSummary();
+    renderResponseTimeSummary();
+    renderBodyLanguageSummary();
     renderAudioReview();
+    renderVideoReview();
   }
 
   function renderSpeechMetricsSummary() {
@@ -4176,6 +4439,167 @@
     container.appendChild(paceSummary);
   }
 
+  function renderResponseTimeSummary() {
+    var container = $("responseTimeSummary");
+    if (!container) {
+      return;
+    }
+    container.textContent = "";
+    var entries = appState.interviewLog && Array.isArray(appState.interviewLog.entries) ? appState.interviewLog.entries : [];
+    if (!entries.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "分析対象の回答がありません。";
+      container.appendChild(empty);
+      return;
+    }
+
+    var measuredEntries = entries.filter(function (entry) {
+      return typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0;
+    });
+
+    if (!measuredEntries.length) {
+      var noData = document.createElement("p");
+      noData.className = "item-meta";
+      noData.textContent = "回答時間を計測できませんでした。";
+      container.appendChild(noData);
+      return;
+    }
+
+    var totalMs = measuredEntries.reduce(function (sum, entry) {
+      return sum + entry.responseTimeMs;
+    }, 0);
+    var averageMs = totalMs / measuredEntries.length;
+    var slowestEntry = measuredEntries.reduce(function (slowest, entry) {
+      return (!slowest || entry.responseTimeMs > slowest.responseTimeMs) ? entry : slowest;
+    }, null);
+
+    var averageSummary = document.createElement("p");
+    averageSummary.className = "item-meta";
+    averageSummary.textContent = "平均回答時間: " + formatDuration(averageMs);
+    container.appendChild(averageSummary);
+
+    if (slowestEntry) {
+      var slowestSummary = document.createElement("p");
+      slowestSummary.className = "item-meta";
+      slowestSummary.textContent = "最も時間がかかった質問: 質問" + slowestEntry.questionNumber +
+        "（" + formatDuration(slowestEntry.responseTimeMs) + "）";
+      container.appendChild(slowestSummary);
+    }
+
+    var list = document.createElement("ul");
+    list.className = "feedback-list";
+    entries.forEach(function (entry) {
+      var item = document.createElement("li");
+      var hasTime = typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0;
+      item.textContent = "質問" + entry.questionNumber + ": " + (hasTime ? formatDuration(entry.responseTimeMs) : "計測不可");
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
+
+  function describeMotionLevel(score) {
+    if (score < 34) {
+      return "動きが少なめ";
+    }
+    if (score > 66) {
+      return "動きが多め";
+    }
+    return "標準的";
+  }
+
+  function renderBodyLanguageSummary() {
+    var container = $("bodyLanguageSummary");
+    if (!container) {
+      return;
+    }
+    container.textContent = "";
+    var entries = appState.interviewLog && Array.isArray(appState.interviewLog.entries) ? appState.interviewLog.entries : [];
+    var usedEntries = entries.filter(function (entry) {
+      return entry.bodyLanguageMetrics && entry.bodyLanguageMetrics.available;
+    });
+
+    if (!usedEntries.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "この面接ではカメラが使用されなかったため、映像の傾向分析はありません。";
+      container.appendChild(empty);
+      return;
+    }
+
+    var motionEntries = usedEntries.filter(function (entry) {
+      return entry.bodyLanguageMetrics.motionLevel && entry.bodyLanguageMetrics.motionLevel.available &&
+        typeof entry.bodyLanguageMetrics.motionLevel.score === "number" &&
+        Number.isFinite(entry.bodyLanguageMetrics.motionLevel.score);
+    });
+
+    var motionSummary = document.createElement("p");
+    motionSummary.className = "item-meta";
+    if (motionEntries.length) {
+      var motionTotal = motionEntries.reduce(function (sum, entry) {
+        return sum + entry.bodyLanguageMetrics.motionLevel.score;
+      }, 0);
+      var motionAverage = Math.round(motionTotal / motionEntries.length);
+      motionSummary.textContent = "平均的な映像の変化量: " + motionAverage + "/100（" +
+        describeMotionLevel(motionAverage) + "、参考値）";
+    } else {
+      motionSummary.textContent = "映像の変化量: 算出できませんでした。";
+    }
+    container.appendChild(motionSummary);
+
+    var stabilityEntries = usedEntries.filter(function (entry) {
+      return entry.bodyLanguageMetrics.faceStability && entry.bodyLanguageMetrics.faceStability.available &&
+        typeof entry.bodyLanguageMetrics.faceStability.score === "number" &&
+        Number.isFinite(entry.bodyLanguageMetrics.faceStability.score);
+    });
+
+    var stabilitySummary = document.createElement("p");
+    stabilitySummary.className = "item-meta";
+    if (stabilityEntries.length) {
+      var stabilityTotal = stabilityEntries.reduce(function (sum, entry) {
+        return sum + entry.bodyLanguageMetrics.faceStability.score;
+      }, 0);
+      var stabilityAverage = Math.round(stabilityTotal / stabilityEntries.length);
+      stabilitySummary.textContent = "平均的な顔位置の安定度: " + stabilityAverage + "/100（参考値）";
+    } else {
+      // 録画当時にFaceDetectorが使えたかどうかは、閲覧中ブラウザの対応状況ではなく
+      // 記録時にstopBodyLanguageSampling()が保存したunavailableReasonで判定する
+      // （履歴を別のブラウザで開いた場合でも当時の状況が正しく表示されるようにするため）。
+      var unsupportedAtRecording = usedEntries.some(function (entry) {
+        return entry.bodyLanguageMetrics.faceStability &&
+          entry.bodyLanguageMetrics.faceStability.unavailableReason === "unsupported";
+      });
+      stabilitySummary.textContent = unsupportedAtRecording
+        ? "顔位置の安定度: この環境（ブラウザ）では利用できません（映像の変化量のみ分析対象です）。"
+        : "顔位置の安定度: 顔を検出できなかったため、今回は算出できませんでした。";
+    }
+    container.appendChild(stabilitySummary);
+
+    var list = document.createElement("ul");
+    list.className = "feedback-list";
+    entries.forEach(function (entry) {
+      var metrics = entry.bodyLanguageMetrics;
+      var item = document.createElement("li");
+      if (!metrics || !metrics.available) {
+        item.textContent = "質問" + entry.questionNumber + ": カメラ映像なし";
+        list.appendChild(item);
+        return;
+      }
+      var parts = [];
+      if (metrics.motionLevel && metrics.motionLevel.available && typeof metrics.motionLevel.score === "number" &&
+        Number.isFinite(metrics.motionLevel.score)) {
+        parts.push("変化量" + Math.round(metrics.motionLevel.score) + "/100");
+      }
+      if (metrics.faceStability && metrics.faceStability.available && typeof metrics.faceStability.score === "number" &&
+        Number.isFinite(metrics.faceStability.score)) {
+        parts.push("安定度" + Math.round(metrics.faceStability.score) + "/100");
+      }
+      item.textContent = "質問" + entry.questionNumber + ": " + (parts.length ? parts.join(" / ") : "算出不可");
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
+
   function formatDuration(ms) {
     if (!Number.isFinite(ms) || ms <= 0) {
       return "時間不明";
@@ -4238,6 +4662,58 @@
     });
   }
 
+  function getVideoClip(clipId) {
+    return clipId && appState.videoClips ? appState.videoClips[clipId] || null : null;
+  }
+
+  function renderVideoReview() {
+    var list = $("videoReviewList");
+    if (!list) {
+      return;
+    }
+    list.textContent = "";
+    var entries = appState.interviewLog && Array.isArray(appState.interviewLog.entries) ? appState.interviewLog.entries : [];
+    var videoEntries = entries.map(function (entry) {
+      return {
+        entry: entry,
+        clip: getVideoClip(entry.videoClipId)
+      };
+    }).filter(function (item) {
+      return item.clip && item.clip.url;
+    });
+
+    if (!videoEntries.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "この面接で確認できる録画はありません。";
+      list.appendChild(empty);
+      return;
+    }
+
+    videoEntries.forEach(function (item) {
+      var block = document.createElement("article");
+      var title = document.createElement("p");
+      var meta = document.createElement("p");
+      var transcript = document.createElement("p");
+      var video = document.createElement("video");
+      block.className = "video-review-item";
+      title.textContent = "Q" + item.entry.questionNumber + " 録画";
+      meta.textContent = [
+        item.clip.mimeType || "video",
+        item.clip.size ? Math.round(item.clip.size / 1024) + "KB" : "",
+        formatDuration(item.clip.durationMs)
+      ].filter(Boolean).join(" / ");
+      transcript.textContent = "文字起こし: " + (item.entry.transcript && item.entry.transcript.text ? item.entry.transcript.text : item.entry.answer || "");
+      video.controls = true;
+      video.src = item.clip.url;
+      block.appendChild(title);
+      block.appendChild(meta);
+      block.appendChild(video);
+      block.appendChild(transcript);
+      list.appendChild(block);
+    });
+  }
+
   function releaseAudioClips() {
     Object.keys(appState.audioClips || {}).forEach(function (clipId) {
       var clip = appState.audioClips[clipId];
@@ -4247,6 +4723,17 @@
     });
     appState.audioClips = {};
     voiceInputState.pendingClip = null;
+  }
+
+  function releaseVideoClips() {
+    Object.keys(appState.videoClips || {}).forEach(function (clipId) {
+      var clip = appState.videoClips[clipId];
+      if (clip && clip.url && window.URL && typeof window.URL.revokeObjectURL === "function") {
+        window.URL.revokeObjectURL(clip.url);
+      }
+    });
+    appState.videoClips = {};
+    cameraInputState.pendingClip = null;
   }
 
   function appendListItems(id, items) {
@@ -4336,6 +4823,106 @@
     });
 
     return filtered;
+  }
+
+  function computeAchievements(logs) {
+    var completed = (logs || []).filter(function (log) {
+      return log.finalFeedback && typeof log.finalFeedback.finalScore === "number";
+    });
+    var completedCount = completed.length;
+
+    // 日時が取れないログ（savedAt/finishedAt/startedAtが全て欠落、getHistoryLogTimestampが0を返す）は
+    // 「最初に完了した練習」「連続日数」の判定対象から除く。0（1970年扱い）のまま計算に混ぜると、
+    // 練習回数のカウントには影響しないものの、日付起点の判定だけが不自然にずれるため。
+    var datedCompleted = completed.filter(function (log) {
+      return getHistoryLogTimestamp(log) > 0;
+    });
+
+    var sortedByDate = datedCompleted.slice().sort(function (a, b) {
+      return getHistoryLogTimestamp(a) - getHistoryLogTimestamp(b);
+    });
+    var firstScore = sortedByDate.length > 0 ? sortedByDate[0].finalFeedback.finalScore : null;
+
+    var maxScore = completed.reduce(function (max, log) {
+      return Math.max(max, log.finalFeedback.finalScore);
+    }, -Infinity);
+
+    // 完了済み練習の「日付のみ」（ローカル年月日）を重複除去して昇順に並べ、
+    // 連続する日数の最長runを求める。DSTの影響を避けるため、年月日の値から
+    // Date.UTCで再構成したタイムスタンプで差分を比較する（暦日単位の比較にするため）。
+    var dayTimestamps = [];
+    var seenDays = {};
+    datedCompleted.forEach(function (log) {
+      var date = new Date(getHistoryLogTimestamp(log));
+      var dayKey = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+      if (!seenDays[dayKey]) {
+        seenDays[dayKey] = true;
+        dayTimestamps.push(dayKey);
+      }
+    });
+    dayTimestamps.sort(function (a, b) {
+      return a - b;
+    });
+
+    var oneDayMs = 24 * 60 * 60 * 1000;
+    var longestStreak = dayTimestamps.length > 0 ? 1 : 0;
+    var currentStreak = dayTimestamps.length > 0 ? 1 : 0;
+    for (var i = 1; i < dayTimestamps.length; i++) {
+      if (dayTimestamps[i] - dayTimestamps[i - 1] === oneDayMs) {
+        currentStreak += 1;
+      } else {
+        currentStreak = 1;
+      }
+      if (currentStreak > longestStreak) {
+        longestStreak = currentStreak;
+      }
+    }
+
+    return ACHIEVEMENT_DEFINITIONS.map(function (definition) {
+      var earned = false;
+      var progressText = null;
+
+      if (definition.category === "practice") {
+        earned = completedCount >= definition.threshold;
+        if (!earned) {
+          progressText = "あと" + (definition.threshold - completedCount) + "回で解禁";
+        }
+      } else if (definition.category === "streak") {
+        earned = longestStreak >= definition.threshold;
+        if (!earned) {
+          progressText = "過去最長の連続記録: " + longestStreak + "日（あと" +
+            (definition.threshold - longestStreak) + "日で解禁）";
+        }
+      } else if (definition.category === "score") {
+        var bestScore = completedCount > 0 ? maxScore : 0;
+        earned = completedCount > 0 && maxScore >= definition.threshold;
+        if (!earned) {
+          progressText = "現在の自己ベスト: " + bestScore + "点（あと" +
+            (definition.threshold - bestScore) + "点で解禁）";
+        }
+      } else {
+        // improvement category（score_improve_10）
+        if (completedCount < 2 || firstScore === null) {
+          earned = false;
+          progressText = "まず2回以上練習すると表示されます";
+        } else {
+          var improvement = maxScore - firstScore;
+          earned = improvement >= 10;
+          if (!earned) {
+            progressText = "現在の向上幅: " + improvement + "点（あと" +
+              (10 - improvement) + "点で解禁）";
+          }
+        }
+      }
+
+      return {
+        id: definition.id,
+        title: definition.title,
+        description: definition.description,
+        earned: earned,
+        progressText: earned ? null : progressText
+      };
+    });
   }
 
   function updateHistoryCompanyFilterOptions(logs) {
@@ -4626,6 +5213,44 @@
     body.appendChild(svg);
   }
 
+  function renderAchievementBadges(logs) {
+    var container = $("achievementBadges");
+    if (!container) {
+      return;
+    }
+    container.textContent = "";
+
+    var achievements = computeAchievements(logs);
+    achievements.forEach(function (achievement) {
+      var card = document.createElement("article");
+      card.className = "achievement-badge" + (achievement.earned ? " is-earned" : " is-locked");
+
+      var title = document.createElement("p");
+      title.className = "achievement-badge-title";
+      title.textContent = achievement.title;
+      card.appendChild(title);
+
+      var description = document.createElement("p");
+      description.className = "achievement-badge-description";
+      description.textContent = achievement.description;
+      card.appendChild(description);
+
+      if (achievement.earned) {
+        var earnedLabel = document.createElement("p");
+        earnedLabel.className = "achievement-badge-status";
+        earnedLabel.textContent = "達成済み";
+        card.appendChild(earnedLabel);
+      } else if (achievement.progressText) {
+        var progress = document.createElement("p");
+        progress.className = "achievement-badge-progress";
+        progress.textContent = achievement.progressText;
+        card.appendChild(progress);
+      }
+
+      container.appendChild(card);
+    });
+  }
+
   function renderHistory() {
     var logs = appState.activeAccountId ? getAccountInterviewLogs(appState.activeAccountId) : [];
     var list = $("historyList");
@@ -4636,6 +5261,7 @@
     var filteredLogs = applyHistoryFilterAndSort(logs);
     ensureHistoryScoreChart();
     renderHistoryScoreChart(filteredLogs);
+    renderAchievementBadges(logs);
 
     if (list) {
       list.textContent = "";
@@ -4898,6 +5524,8 @@
       var audioNote = document.createElement("p");
       var fillerNote = document.createElement("p");
       var paceNote = document.createElement("p");
+      var responseTimeNote = document.createElement("p");
+      var bodyLanguageNote = document.createElement("p");
       var e = document.createElement("p");
       var deepDive = document.createElement("p");
       var followUpReason = document.createElement("p");
@@ -4920,6 +5548,25 @@
       paceNote.textContent = "話速: " + (speechAnalysis.paceCharsPerMinute !== null
         ? speechAnalysis.paceCharsPerMinute + "文字/分"
         : "計測不可（音声入力なし）");
+      responseTimeNote.className = "item-meta";
+      responseTimeNote.textContent = "回答時間: " + (typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0
+        ? formatDuration(entry.responseTimeMs)
+        : "計測不可");
+      bodyLanguageNote.className = "item-meta";
+      if (entry.bodyLanguageMetrics && entry.bodyLanguageMetrics.available) {
+        var blParts = [];
+        if (entry.bodyLanguageMetrics.motionLevel && entry.bodyLanguageMetrics.motionLevel.available &&
+          typeof entry.bodyLanguageMetrics.motionLevel.score === "number" &&
+          Number.isFinite(entry.bodyLanguageMetrics.motionLevel.score)) {
+          blParts.push("変化量" + Math.round(entry.bodyLanguageMetrics.motionLevel.score) + "/100");
+        }
+        if (entry.bodyLanguageMetrics.faceStability && entry.bodyLanguageMetrics.faceStability.available &&
+          typeof entry.bodyLanguageMetrics.faceStability.score === "number" &&
+          Number.isFinite(entry.bodyLanguageMetrics.faceStability.score)) {
+          blParts.push("安定度" + Math.round(entry.bodyLanguageMetrics.faceStability.score) + "/100");
+        }
+        bodyLanguageNote.textContent = "映像の傾向（参考値）: " + (blParts.length ? blParts.join(" / ") : "算出不可");
+      }
       e.textContent = "評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし");
       deepDive.textContent = "深掘り質問: " + (entry.evaluation && entry.evaluation.deepDiveQuestion ? entry.evaluation.deepDiveQuestion : "なし");
       followUpReason.textContent = "追加確認の理由: " + (entry.evaluation && entry.evaluation.followUpReason ? entry.evaluation.followUpReason : "なし");
@@ -4933,6 +5580,10 @@
       }
       block.appendChild(fillerNote);
       block.appendChild(paceNote);
+      block.appendChild(responseTimeNote);
+      if (entry.bodyLanguageMetrics && entry.bodyLanguageMetrics.available) {
+        block.appendChild(bodyLanguageNote);
+      }
       block.appendChild(e);
       block.appendChild(deepDive);
       block.appendChild(followUpReason);
@@ -4961,8 +5612,15 @@
     setValue("interviewTypeSelect", settings.interviewType || DEFAULT_SETTINGS.interviewType);
     setValue("targetTypeSelect", settings.targetType || DEFAULT_SETTINGS.targetType);
     setValue("categorySelect", normalizeCategory(settings.category || DEFAULT_SETTINGS.category));
+    setValue("questionSourceSelect", settings.questionSource || DEFAULT_SETTINGS.questionSource);
     setValue("questionCountSelect", settings.questionCount || DEFAULT_SETTINGS.questionCount);
     setValue("userProfileInput", settings.userProfile || "");
+    // カメラ利用は毎セッション明示的な同意操作を必須にするため、過去の設定から
+    // 有効状態を復元しない（チェックは常にユーザーの今回の操作に委ねる）。
+    var cameraEnabledCheckbox = $("cameraEnabledInput");
+    if (cameraEnabledCheckbox && !cameraEnabledCheckbox.disabled) {
+      cameraEnabledCheckbox.checked = false;
+    }
     selectInterviewerType(settings.interviewerTypeMode === "random"
       ? RANDOM_INTERVIEWER_TYPE_ID
       : settings.interviewerTypeSelection || settings.interviewerType || DEFAULT_SETTINGS.interviewerType);
@@ -5005,6 +5663,25 @@
         lines.push("テーマ: " + entry.topic.label);
       }
       lines.push("A. " + (entry.answer || ""));
+      if (typeof entry.responseTimeMs === "number" && Number.isFinite(entry.responseTimeMs) && entry.responseTimeMs >= 0) {
+        lines.push("回答時間: " + formatDuration(entry.responseTimeMs));
+      }
+      if (entry.bodyLanguageMetrics && entry.bodyLanguageMetrics.available) {
+        var textBlParts = [];
+        if (entry.bodyLanguageMetrics.motionLevel && entry.bodyLanguageMetrics.motionLevel.available &&
+          typeof entry.bodyLanguageMetrics.motionLevel.score === "number" &&
+          Number.isFinite(entry.bodyLanguageMetrics.motionLevel.score)) {
+          textBlParts.push("変化量" + Math.round(entry.bodyLanguageMetrics.motionLevel.score) + "/100");
+        }
+        if (entry.bodyLanguageMetrics.faceStability && entry.bodyLanguageMetrics.faceStability.available &&
+          typeof entry.bodyLanguageMetrics.faceStability.score === "number" &&
+          Number.isFinite(entry.bodyLanguageMetrics.faceStability.score)) {
+          textBlParts.push("安定度" + Math.round(entry.bodyLanguageMetrics.faceStability.score) + "/100");
+        }
+        if (textBlParts.length) {
+          lines.push("映像の傾向（参考値）: " + textBlParts.join(" / "));
+        }
+      }
       lines.push("評価: " + (entry.evaluation ? entry.evaluation.score + "点 - " + entry.evaluation.summary : "なし"));
       if (entry.evaluation && entry.evaluation.deepDiveQuestion) {
         lines.push("深掘り質問: " + entry.evaluation.deepDiveQuestion);
@@ -5099,6 +5776,8 @@
 
   function restart() {
     releaseAudioClips();
+    releaseVideoClips();
+    stopCameraMediaStream();
     renderSetupCompanySelect();
     showView("setupView");
   }
@@ -5119,6 +5798,8 @@
       return;
     }
     releaseAudioClips();
+    releaseVideoClips();
+    stopCameraMediaStream();
     if (appState.editingCompanyId) {
       cancelEditCompany();
     }
@@ -5590,6 +6271,409 @@
     return Promise.resolve(voiceInputState.pendingClip);
   }
 
+  function getSupportedVideoMimeType() {
+    if (!window.MediaRecorder || typeof window.MediaRecorder.isTypeSupported !== "function") {
+      return "";
+    }
+    return [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+      "video/mp4"
+    ].find(function (type) {
+      return window.MediaRecorder.isTypeSupported(type);
+    }) || "";
+  }
+
+  function stopCameraMediaStream() {
+    try {
+      clearBodyLanguageSamplingInterval();
+    } catch (error) {
+      console.warn("Body language sampling interval could not be cleared during teardown:", error);
+    }
+    if (cameraInputState.mediaRecorder && cameraInputState.mediaRecorder.state !== "inactive") {
+      try {
+        cameraInputState.mediaRecorder.stop();
+      } catch (error) {
+        console.warn("Camera recorder could not be stopped during teardown:", error);
+      }
+    }
+    cameraInputState.mediaRecorder = null;
+    cameraInputState.recordingStopPromise = null;
+    cameraInputState.videoChunks = [];
+    cameraInputState.recordingStartedAt = null;
+    if (cameraInputState.mediaStream && typeof cameraInputState.mediaStream.getTracks === "function") {
+      cameraInputState.mediaStream.getTracks().forEach(function (track) {
+        if (track && typeof track.stop === "function") {
+          track.stop();
+        }
+      });
+    }
+    cameraInputState.mediaStream = null;
+    cameraInputState.isRecording = false;
+    var preview = $("cameraSelfPreview");
+    if (preview) {
+      preview.srcObject = null;
+    }
+    var panel = $("cameraPreviewPanel");
+    if (panel) {
+      panel.hidden = true;
+    }
+  }
+
+  async function setupCameraCapture() {
+    cameraInputState.lastError = "";
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function" || !window.MediaRecorder) {
+      cameraInputState.isSupported = false;
+      cameraInputState.lastError = "unsupported";
+      setText("cameraStatus", "このブラウザはカメラ録画に対応していません。テキスト回答や音声入力など他の機能は通常通り利用できます。");
+      var unsupportedPanel = $("cameraPreviewPanel");
+      if (unsupportedPanel) {
+        unsupportedPanel.hidden = false;
+      }
+      return;
+    }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      cameraInputState.mediaStream = stream;
+      cameraInputState.isSupported = true;
+      var preview = $("cameraSelfPreview");
+      if (preview) {
+        preview.srcObject = stream;
+      }
+      var panel = $("cameraPreviewPanel");
+      if (panel) {
+        panel.hidden = false;
+      }
+      setText("cameraStatus", "カメラ映像を録画しています。録画はこの面接セッション中のみ確認でき、終了後は破棄されます。");
+    } catch (error) {
+      cameraInputState.isSupported = false;
+      cameraInputState.mediaStream = null;
+      cameraInputState.lastError = error && error.message ? error.message : "camera-unavailable";
+      setText("cameraStatus", "カメラ・マイクを利用できませんでした（" + cameraInputState.lastError + "）。テキスト回答や音声入力など他の機能には影響しません。");
+      var errorPanel = $("cameraPreviewPanel");
+      if (errorPanel) {
+        errorPanel.hidden = false;
+      }
+      console.warn("Camera capture could not be started:", error);
+    }
+  }
+
+  function createVideoClipFromBlob(blob, startedAt) {
+    if (!blob || !blob.size || !window.URL || typeof window.URL.createObjectURL !== "function") {
+      return null;
+    }
+    var clip = {
+      id: makeId("video"),
+      url: window.URL.createObjectURL(blob),
+      mimeType: blob.type || "video/webm",
+      size: blob.size,
+      durationMs: startedAt ? Math.max(0, Date.now() - startedAt) : null,
+      createdAt: new Date().toISOString()
+    };
+    appState.videoClips[clip.id] = clip;
+    return clip;
+  }
+
+  function isFaceDetectorSupported() {
+    return typeof window.FaceDetector === "function";
+  }
+
+  function setupFaceDetectorForSampling() {
+    cameraInputState.faceDetector = null;
+    cameraInputState.faceDetectorSupported = false;
+    if (!isFaceDetectorSupported()) {
+      return;
+    }
+    try {
+      cameraInputState.faceDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+      // API自体はあってもコンストラクタが失敗する環境があるため、実際に初期化できた
+      // 場合だけ「対応している」とみなす。この値をサンプリング終了時の結果に焼き込み、
+      // 履歴表示時は閲覧中ブラウザの対応状況ではなく録画当時の値を使う。
+      cameraInputState.faceDetectorSupported = true;
+    } catch (error) {
+      cameraInputState.faceDetector = null;
+      console.warn("FaceDetector could not be initialized:", error);
+    }
+  }
+
+  function ensureBodyLanguageSampleCanvas() {
+    if (cameraInputState.sampleCanvas && cameraInputState.sampleCanvasCtx) {
+      return;
+    }
+    try {
+      var canvas = document.createElement("canvas");
+      canvas.width = BODY_LANGUAGE_SAMPLE_WIDTH;
+      canvas.height = BODY_LANGUAGE_SAMPLE_HEIGHT;
+      cameraInputState.sampleCanvas = canvas;
+      cameraInputState.sampleCanvasCtx = canvas.getContext("2d", { willReadFrequently: true });
+    } catch (error) {
+      cameraInputState.sampleCanvas = null;
+      cameraInputState.sampleCanvasCtx = null;
+      console.warn("Body language sample canvas could not be created:", error);
+    }
+  }
+
+  // videoを縮小したオフスクリーンcanvasをグレースケール化し、前フレームとの平均絶対差分（0-255スケール、正規化前）を返す。
+  // 差分を取れる前フレームがまだない場合はnullを返す。
+  function sampleMotionDiff(video) {
+    var canvas = cameraInputState.sampleCanvas;
+    var ctx = cameraInputState.sampleCanvasCtx;
+    if (!canvas || !ctx) {
+      return null;
+    }
+    try {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      var frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var pixelCount = canvas.width * canvas.height;
+      var gray = new Float32Array(pixelCount);
+      for (var i = 0; i < pixelCount; i += 1) {
+        var offset = i * 4;
+        gray[i] = frame.data[offset] * 0.299 + frame.data[offset + 1] * 0.587 + frame.data[offset + 2] * 0.114;
+      }
+      var diff = null;
+      if (cameraInputState.lastFrameData && cameraInputState.lastFrameData.length === pixelCount) {
+        var sum = 0;
+        for (var j = 0; j < pixelCount; j += 1) {
+          sum += Math.abs(gray[j] - cameraInputState.lastFrameData[j]);
+        }
+        diff = sum / pixelCount;
+      }
+      cameraInputState.lastFrameData = gray;
+      return diff;
+    } catch (error) {
+      console.warn("Motion diff sampling failed:", error);
+      return null;
+    }
+  }
+
+  // FaceDetectorで検出した最初の顔の中心座標を、video解像度に対する0-1の相対座標として返す。未検出・失敗時はnull。
+  async function detectFacePosition(video) {
+    if (!cameraInputState.faceDetector || !video.videoWidth || !video.videoHeight) {
+      return null;
+    }
+    try {
+      var faces = await cameraInputState.faceDetector.detect(video);
+      if (!faces || !faces.length || !faces[0].boundingBox) {
+        return null;
+      }
+      var box = faces[0].boundingBox;
+      return {
+        x: (box.x + box.width / 2) / video.videoWidth,
+        y: (box.y + box.height / 2) / video.videoHeight
+      };
+    } catch (error) {
+      console.warn("Face detection failed:", error);
+      return null;
+    }
+  }
+
+  function clearBodyLanguageSamplingInterval() {
+    if (cameraInputState.samplingIntervalId !== null) {
+      clearInterval(cameraInputState.samplingIntervalId);
+      cameraInputState.samplingIntervalId = null;
+    }
+  }
+
+  // sessionIdは呼び出し時点のcameraInputState.samplingSessionIdを閉じ込めておき、
+  // 非同期の顔検出待ち中に次の質問のstopBodyLanguageSampling()が呼ばれて
+  // サンプル配列がリセットされても、古いtickの結果を新しい配列へ混入させないためのガード。
+  function runBodyLanguageSamplingTick(video, sessionId) {
+    if (cameraInputState.samplingTickInProgress) {
+      return;
+    }
+    cameraInputState.samplingTickInProgress = true;
+    Promise.resolve()
+      .then(async function () {
+        if (!video || !video.videoWidth || !video.videoHeight) {
+          return;
+        }
+        cameraInputState.samplingTickCount += 1;
+        var motionDiff = sampleMotionDiff(video);
+        var facePosition = null;
+        // 顔検出は重いため、動き検出より低頻度（2回に1回）で実行する。
+        if (cameraInputState.faceDetector && cameraInputState.samplingTickCount % 2 === 0) {
+          facePosition = await detectFacePosition(video);
+        }
+        if (cameraInputState.samplingSessionId !== sessionId) {
+          // 待っている間に質問が切り替わっていたら、このtickの結果は捨てる。
+          return;
+        }
+        cameraInputState.bodyLanguageSamples.push({
+          facePosition: facePosition,
+          motionDiff: motionDiff
+        });
+      })
+      .catch(function (error) {
+        console.warn("Body language sampling tick failed:", error);
+      })
+      .then(function () {
+        cameraInputState.samplingTickInProgress = false;
+      });
+  }
+
+  // 質問ごとの録画開始に合わせて呼び出す。FaceDetectorのfeature detection、
+  // オフスクリーンcanvasの準備、サンプリング用setIntervalの起動を行う。
+  // 失敗しても面接の進行・MediaRecorderでの録画自体には一切影響させない。
+  function startBodyLanguageSampling() {
+    try {
+      clearBodyLanguageSamplingInterval();
+      cameraInputState.bodyLanguageSamples = [];
+      cameraInputState.lastFrameData = null;
+      cameraInputState.samplingTickCount = 0;
+      cameraInputState.samplingTickInProgress = false;
+      cameraInputState.samplingSessionId += 1;
+      var sessionId = cameraInputState.samplingSessionId;
+      ensureBodyLanguageSampleCanvas();
+      setupFaceDetectorForSampling();
+      var video = $("cameraSelfPreview");
+      if (!video || !cameraInputState.sampleCanvas) {
+        return;
+      }
+      // 質問が短時間で回答された場合でも最低1件の動き量サンプルを確保できるよう、
+      // intervalの初回発火を待たずに即座に1回サンプリングしておく（1回目は前フレームが
+      // ないためmotionDiffはnullになるが、2回目以降の差分計算の基準フレームにはなる）。
+      runBodyLanguageSamplingTick(video, sessionId);
+      cameraInputState.samplingIntervalId = setInterval(function () {
+        runBodyLanguageSamplingTick(video, sessionId);
+      }, BODY_LANGUAGE_SAMPLE_INTERVAL_MS);
+    } catch (error) {
+      console.warn("Body language sampling could not be started:", error);
+    }
+  }
+
+  function createUnavailableBodyLanguageMetrics() {
+    return {
+      available: false,
+      faceStability: { available: false, score: null, sampleCount: 0, unavailableReason: "no_camera" },
+      motionLevel: { available: false, score: null, sampleCount: 0 }
+    };
+  }
+
+  // setIntervalを止め、蓄積したサンプルからfaceStability/motionLevelスコアを集計して返す
+  // （motionLevelは0-100で高いほど「動きが大きい」、faceStabilityは0-100で高いほど「位置が安定」という
+  // 意味であり、どちらも「高い=良い」という評価ではない。単なる傾向の目安値）。
+  // 次の質問のサンプリングに影響しないよう、蓄積状態もリセットする。
+  function stopBodyLanguageSampling() {
+    var result = createUnavailableBodyLanguageMetrics();
+    result.faceStability.unavailableReason = cameraInputState.faceDetectorSupported ? "not_detected" : "unsupported";
+    try {
+      clearBodyLanguageSamplingInterval();
+      // 進行中の非同期tickが古いsessionIdの結果を誤って新しい配列にpushしないよう、
+      // ここでsessionを進めておく（runBodyLanguageSamplingTick側のガードと対になる）。
+      cameraInputState.samplingSessionId += 1;
+      var samples = cameraInputState.bodyLanguageSamples || [];
+
+      var motionValues = samples
+        .map(function (sample) { return sample.motionDiff; })
+        .filter(function (value) { return typeof value === "number" && isFinite(value); });
+      if (motionValues.length > 0) {
+        var avgMotion = motionValues.reduce(function (sum, value) { return sum + value; }, 0) / motionValues.length;
+        var motionScore = Math.max(0, Math.min(100, (avgMotion / BODY_LANGUAGE_MAX_MOTION_DIFF) * 100));
+        result.motionLevel = {
+          available: true,
+          score: Math.round(motionScore),
+          sampleCount: motionValues.length
+        };
+      }
+
+      var facePositions = samples
+        .map(function (sample) { return sample.facePosition; })
+        .filter(function (position) {
+          return position && typeof position.x === "number" && typeof position.y === "number";
+        });
+      if (facePositions.length > 0) {
+        var meanX = facePositions.reduce(function (sum, position) { return sum + position.x; }, 0) / facePositions.length;
+        var meanY = facePositions.reduce(function (sum, position) { return sum + position.y; }, 0) / facePositions.length;
+        var varianceSum = facePositions.reduce(function (sum, position) {
+          var dx = position.x - meanX;
+          var dy = position.y - meanY;
+          return sum + (dx * dx + dy * dy);
+        }, 0);
+        var spread = Math.sqrt(varianceSum / facePositions.length);
+        var stabilityScore = Math.max(0, Math.min(100, (1 - spread / BODY_LANGUAGE_MAX_FACE_SPREAD) * 100));
+        result.faceStability = {
+          available: true,
+          score: Math.round(stabilityScore),
+          sampleCount: facePositions.length
+        };
+      }
+
+      // 「サンプルを1件でも取れたか」ではなく「実際に使えるスコアが1つでもあるか」で判定する。
+      // 1件目のtickはmotionDiffの基準フレームを作るだけでスコアにならないため、これがないと
+      // 短時間の回答でサンプル自体は残るのにavailable:trueだけが立つケースがあった。
+      result.available = result.motionLevel.available || result.faceStability.available;
+    } catch (error) {
+      console.warn("Body language sampling could not be finalized:", error);
+    } finally {
+      cameraInputState.bodyLanguageSamples = [];
+      cameraInputState.lastFrameData = null;
+      cameraInputState.samplingTickCount = 0;
+      cameraInputState.samplingTickInProgress = false;
+    }
+    return result;
+  }
+
+  function startCameraRecording() {
+    if (!cameraInputState.isEnabled || !cameraInputState.isSupported || !cameraInputState.mediaStream || !window.MediaRecorder) {
+      return;
+    }
+    try {
+      var mimeType = getSupportedVideoMimeType();
+      var options = mimeType ? { mimeType: mimeType } : undefined;
+      // onstop/ondataavailable はこのrecorder・chunksをクロージャで直接参照する。
+      // cameraInputState.mediaRecorder経由で読むと、途中でstopCameraMediaStream()が
+      // 参照をnullに戻した場合にTypeErrorになるため。
+      var chunks = [];
+      var startedAt = Date.now();
+      var recorder = new window.MediaRecorder(cameraInputState.mediaStream, options);
+      cameraInputState.videoChunks = chunks;
+      cameraInputState.pendingClip = null;
+      cameraInputState.recordingStartedAt = startedAt;
+      cameraInputState.mediaRecorder = recorder;
+      recorder.ondataavailable = function (event) {
+        if (event.data && event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+      cameraInputState.recordingStopPromise = new Promise(function (resolve) {
+        recorder.onstop = function () {
+          var type = recorder.mimeType || mimeType || "video/webm";
+          var blob = chunks.length ? new Blob(chunks, { type: type }) : null;
+          var clip = createVideoClipFromBlob(blob, startedAt);
+          if (cameraInputState.mediaRecorder === recorder) {
+            cameraInputState.pendingClip = clip;
+            cameraInputState.isRecording = false;
+          }
+          resolve(clip);
+        };
+      });
+      recorder.start();
+      cameraInputState.isRecording = true;
+      startBodyLanguageSampling();
+    } catch (error) {
+      cameraInputState.isRecording = false;
+      cameraInputState.recordingStopPromise = null;
+      cameraInputState.lastError = error && error.message ? error.message : "camera-recording-unavailable";
+      console.warn("Camera recording could not be started:", error);
+    }
+  }
+
+  function stopCameraRecording() {
+    try {
+      cameraInputState.lastBodyLanguageMetrics = stopBodyLanguageSampling();
+    } catch (error) {
+      cameraInputState.lastBodyLanguageMetrics = null;
+      console.warn("Body language sampling could not be finalized on stop:", error);
+    }
+    if (cameraInputState.mediaRecorder && cameraInputState.mediaRecorder.state !== "inactive") {
+      cameraInputState.mediaRecorder.stop();
+      return cameraInputState.recordingStopPromise || Promise.resolve(null);
+    }
+    cameraInputState.isRecording = false;
+    return Promise.resolve(cameraInputState.pendingClip);
+  }
+
   function setVoiceUiState(state) {
     var panel = document.querySelector(".voice-input-panel");
     var status = $("voiceStatus");
@@ -5714,13 +6798,23 @@
   }
 
   function guardedNavigation(handler) {
-    return function (event) {
+    return async function (event) {
       if (!confirmLeaveInterviewIfNeeded()) {
         if (event && typeof event.preventDefault === "function") {
           event.preventDefault();
         }
         return;
       }
+      // 画面遷移のたびに、進行中のカメラ録画・音声録音を止め、
+      // レビュー用クリップ（フィードバック画面限定の再生用データ）を解放する。
+      // クリップが無い場合や録画中でない場合は何もしないため、面接と無関係な
+      // 画面遷移（例: 設定画面→履歴画面）で呼んでも副作用はない。
+      if (cameraInputState.isRecording) {
+        await stopCameraRecording();
+      }
+      stopCameraMediaStream();
+      releaseVideoClips();
+      releaseAudioClips();
       handler(event);
     };
   }
@@ -5778,6 +6872,8 @@
       stopQuestionSpeech();
       releaseAudioClips();
       stopVoiceMediaStream();
+      releaseVideoClips();
+      stopCameraMediaStream();
       if (hasUnsavedInterviewProgress() || hasPendingCloudInterviewLogSave()) {
         event.preventDefault();
         event.returnValue = "";
@@ -5785,11 +6881,26 @@
     });
   }
 
+  function setupCameraInput() {
+    var supportsCamera = Boolean(navigator.mediaDevices
+      && typeof navigator.mediaDevices.getUserMedia === "function"
+      && window.MediaRecorder);
+    if (!supportsCamera) {
+      var checkbox = $("cameraEnabledInput");
+      if (checkbox) {
+        checkbox.checked = false;
+        checkbox.disabled = true;
+      }
+      setText("cameraConsentHelp", "このブラウザはカメラ録画に対応していません。テキスト回答や音声入力は通常通りご利用いただけます。");
+    }
+  }
+
   function init() {
     captureLocalMigrationSnapshot();
     bindEvents();
     setupQuestionSpeech();
     setupVoiceInput();
+    setupCameraInput();
     selectInterviewerType(getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType));
     renderAccounts();
     renderAiSettings();
