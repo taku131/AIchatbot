@@ -1,0 +1,3 @@
+# 外部OSSライブラリをそのまま同梱(vendor)しているファイルは、
+# 配布元と内容が一致した状態を保つため改行コード変換の対象外にする。
+ai-interview-prototype/vendor/** -text

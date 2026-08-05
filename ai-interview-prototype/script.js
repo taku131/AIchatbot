@@ -2053,6 +2053,114 @@
     renderEsImportPreview(pairs, accountId, companyId);
   }
 
+  // PDFファイルからテキストを抽出する（pdf.jsを使用）。
+  // window.pdfjsLibが読み込まれていない場合は例外を投げる。
+  // 抽出したテキストが空文字（画像のみのスキャンPDF等）の場合も、
+  // 呼び出し元でメッセージを出し分けられるよう空文字列のまま返す。
+  // onProgress(pageNumber, totalPages)を渡すと、ページ処理ごとに呼ばれる
+  // （ページ数の多いPDFで、解析中であることをユーザーに伝え続けるため）。
+  async function extractTextFromPdf(file, onProgress) {
+    if (!window.pdfjsLib) {
+      throw new Error("pdfjs_unavailable");
+    }
+    var arrayBuffer = await file.arrayBuffer();
+    var loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer });
+    var pdfDoc = await loadingTask.promise;
+    try {
+      var pageTexts = [];
+      for (var pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
+        var page = await pdfDoc.getPage(pageNumber);
+        var textContent = await page.getTextContent();
+        // pdf.jsのitemはページ内の断片ごとに分かれているだけで改行を含まないため、
+        // 単純にスペース結合すると「【自己PR】」「設問1」のような行頭の見出しが
+        // 本文と同じ行に連結され、既存の簡易分割（行頭パターンマッチ）が機能しなくなる。
+        // item.hasEOLでこの断片の直後に改行があったかを判定し、行構造を復元する。
+        var pageText = "";
+        textContent.items.forEach(function (item) {
+          pageText += item.str;
+          pageText += item.hasEOL ? "\n" : " ";
+        });
+        pageTexts.push(pageText.trim());
+        if (typeof page.cleanup === "function") {
+          page.cleanup();
+        }
+        if (typeof onProgress === "function") {
+          onProgress(pageNumber, pdfDoc.numPages);
+        }
+      }
+      return pageTexts.join("\n\n").trim();
+    } finally {
+      if (typeof pdfDoc.destroy === "function") {
+        pdfDoc.destroy();
+      }
+    }
+  }
+
+  // ファイル選択(input[type=file])からPDFを読み込み、テキストを抽出して
+  // esImportRawTextへ流し込む。抽出後は既存の「分割する」ボタン（handleEsImportAnalyze）
+  // で設問・回答ペアに分割できる。
+  async function handleEsImportPdfSelected(event) {
+    var file = event.target.files && event.target.files[0];
+    if (!file) {
+      return;
+    }
+
+    var isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
+    if (!isPdf) {
+      setText("esImportStatus", "PDFファイルを選択してください。");
+      event.target.value = "";
+      return;
+    }
+
+    var pdfInputButton = $("esImportPdfInput");
+    if (pdfInputButton) {
+      pdfInputButton.disabled = true;
+    }
+    // 抽出中にテキストエリアの内容が変わるため、「分割する」を同時に押されると
+    // 抽出前の古いテキストのまま分割が走ってしまう。抽出完了までは無効化しておく。
+    var analyzeButtonDuringPdf = $("esImportAnalyzeBtn");
+    if (analyzeButtonDuringPdf) {
+      analyzeButtonDuringPdf.disabled = true;
+    }
+    setText("esImportStatus", "PDFを解析中です...");
+
+    try {
+      var extractedText = await extractTextFromPdf(file, function (pageNumber, totalPages) {
+        if (totalPages > 1) {
+          setText("esImportStatus", "PDFを解析中です...（" + pageNumber + " / " + totalPages + "ページ）");
+        }
+      });
+      if (extractedText) {
+        setValue("esImportRawText", extractedText);
+        // テキストエリアの内容をPDF由来の内容に置き換えたので、直前の分析結果
+        // （別の文章から作られたプレビューカード）を残したままにすると、
+        // 見た目の文章と保存対象のプレビューが食い違ったまま保存できてしまう。
+        var previewList = $("esImportPreviewList");
+        if (previewList) {
+          previewList.textContent = "";
+          delete previewList.dataset.importAccountId;
+          delete previewList.dataset.importCompanyId;
+        }
+        setText("esImportStatus", "PDFからテキストを抽出しました（" + extractedText.length + "文字）。「分割する」ボタンで設問ごとに分割できます。");
+      } else {
+        setText("esImportStatus", "このPDFからはテキストを抽出できませんでした（スキャン画像のみのPDFの可能性があります）。テキストを直接貼り付けてください。");
+      }
+    } catch (error) {
+      var reason = error && error.message === "pdfjs_unavailable"
+        ? "PDFライブラリを読み込めませんでした。ページを再読み込みしてから、もう一度お試しください。"
+        : "PDFの読み込みに失敗しました。ファイルが破損しているか、パスワード保護されている可能性があります。";
+      setText("esImportStatus", reason);
+    } finally {
+      if (pdfInputButton) {
+        pdfInputButton.disabled = false;
+      }
+      if (analyzeButtonDuringPdf) {
+        analyzeButtonDuringPdf.disabled = false;
+      }
+      event.target.value = "";
+    }
+  }
+
   function renderEsImportPreview(pairs, accountId, companyId) {
     var list = $("esImportPreviewList");
     if (!list) {
@@ -6833,6 +6941,7 @@
     on("esMaxCharsInput", "input", updateEsCharCount);
     on("esEntryList", "click", handleEsEntryListClick);
     on("esImportAnalyzeBtn", "click", handleEsImportAnalyze);
+    on("esImportPdfInput", "change", handleEsImportPdfSelected);
     on("setupCompanySelect", "change", handleSetupCompanySelectChange);
     on("interviewerAvatarGrid", "click", handleInterviewerAvatarClick);
     on("interviewerAvatarGrid", "keydown", handleInterviewerAvatarKeydown);
@@ -6896,6 +7005,9 @@
   }
 
   function init() {
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdfjs/pdf.worker.min.js";
+    }
     captureLocalMigrationSnapshot();
     bindEvents();
     setupQuestionSpeech();

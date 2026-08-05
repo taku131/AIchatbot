@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="./style.css">
   <script src="./firebase-config.js"></script>
   <script src="./firebase-cloud.js" type="module"></script>
+  <script src="./vendor/pdfjs/pdf.min.js"></script>
   <script src="./script.js" defer></script>
 </head>
 <body>
@@ -205,6 +206,11 @@
           <div class="list-block" id="esImportBlock">
             <h3>テキストから一括取込</h3>
             <p class="field-help">履歴書やESの文章をそのまま貼り付けると、設問と回答のペアに自動で分割します。OpenAI APIキー未設定時は簡易的な分割になります。</p>
+            <div class="es-import-pdf-picker">
+              <input type="file" id="esImportPdfInput" accept="application/pdf" class="visually-hidden-file-input">
+              <label for="esImportPdfInput" class="button button-secondary">PDFファイルを選択</label>
+              <p class="field-help">提出済みのESや履歴書のPDFを選ぶと、自動でテキストを抽出してテキストエリアに読み込みます（ブラウザ内で処理し、外部には送信しません）。</p>
+            </div>
             <textarea id="esImportRawText" rows="6" placeholder="ここに履歴書やESの文章を貼り付けてください。"></textarea>
             <div class="form-actions">
               <button id="esImportAnalyzeBtn" class="button button-secondary" type="button">分割する</button>
