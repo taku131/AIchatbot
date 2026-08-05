@@ -185,6 +185,20 @@
     practice: "練習対象"
   };
 
+  var ACHIEVEMENT_DEFINITIONS = [
+    { id: "practice_1", category: "practice", threshold: 1, title: "はじめの一歩", description: "面接練習を1回完了" },
+    { id: "practice_5", category: "practice", threshold: 5, title: "習慣の芽生え", description: "面接練習を5回完了" },
+    { id: "practice_10", category: "practice", threshold: 10, title: "積み重ね", description: "面接練習を10回完了" },
+    { id: "practice_25", category: "practice", threshold: 25, title: "継続の力", description: "面接練習を25回完了" },
+    { id: "practice_50", category: "practice", threshold: 50, title: "練習の達人", description: "面接練習を50回完了" },
+    { id: "streak_3", category: "streak", threshold: 3, title: "3日連続練習", description: "3日連続で練習を完了" },
+    { id: "streak_7", category: "streak", threshold: 7, title: "1週間継続", description: "7日連続で練習を完了" },
+    { id: "streak_14", category: "streak", threshold: 14, title: "2週間継続", description: "14日連続で練習を完了" },
+    { id: "score_70", category: "score", threshold: 70, title: "70点到達", description: "70点以上のスコアを達成" },
+    { id: "score_90", category: "score", threshold: 90, title: "90点到達", description: "90点以上のスコアを達成" },
+    { id: "score_improve_10", category: "improvement", title: "スコア向上", description: "自己ベストを、最初に記録したスコアから10点以上更新" }
+  ];
+
   var INTERVIEW_TYPE_LABELS = {
     first: "一次面接",
     final: "最終面接",
@@ -4450,6 +4464,106 @@
     return filtered;
   }
 
+  function computeAchievements(logs) {
+    var completed = (logs || []).filter(function (log) {
+      return log.finalFeedback && typeof log.finalFeedback.finalScore === "number";
+    });
+    var completedCount = completed.length;
+
+    // 日時が取れないログ（savedAt/finishedAt/startedAtが全て欠落、getHistoryLogTimestampが0を返す）は
+    // 「最初に完了した練習」「連続日数」の判定対象から除く。0（1970年扱い）のまま計算に混ぜると、
+    // 練習回数のカウントには影響しないものの、日付起点の判定だけが不自然にずれるため。
+    var datedCompleted = completed.filter(function (log) {
+      return getHistoryLogTimestamp(log) > 0;
+    });
+
+    var sortedByDate = datedCompleted.slice().sort(function (a, b) {
+      return getHistoryLogTimestamp(a) - getHistoryLogTimestamp(b);
+    });
+    var firstScore = sortedByDate.length > 0 ? sortedByDate[0].finalFeedback.finalScore : null;
+
+    var maxScore = completed.reduce(function (max, log) {
+      return Math.max(max, log.finalFeedback.finalScore);
+    }, -Infinity);
+
+    // 完了済み練習の「日付のみ」（ローカル年月日）を重複除去して昇順に並べ、
+    // 連続する日数の最長runを求める。DSTの影響を避けるため、年月日の値から
+    // Date.UTCで再構成したタイムスタンプで差分を比較する（暦日単位の比較にするため）。
+    var dayTimestamps = [];
+    var seenDays = {};
+    datedCompleted.forEach(function (log) {
+      var date = new Date(getHistoryLogTimestamp(log));
+      var dayKey = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+      if (!seenDays[dayKey]) {
+        seenDays[dayKey] = true;
+        dayTimestamps.push(dayKey);
+      }
+    });
+    dayTimestamps.sort(function (a, b) {
+      return a - b;
+    });
+
+    var oneDayMs = 24 * 60 * 60 * 1000;
+    var longestStreak = dayTimestamps.length > 0 ? 1 : 0;
+    var currentStreak = dayTimestamps.length > 0 ? 1 : 0;
+    for (var i = 1; i < dayTimestamps.length; i++) {
+      if (dayTimestamps[i] - dayTimestamps[i - 1] === oneDayMs) {
+        currentStreak += 1;
+      } else {
+        currentStreak = 1;
+      }
+      if (currentStreak > longestStreak) {
+        longestStreak = currentStreak;
+      }
+    }
+
+    return ACHIEVEMENT_DEFINITIONS.map(function (definition) {
+      var earned = false;
+      var progressText = null;
+
+      if (definition.category === "practice") {
+        earned = completedCount >= definition.threshold;
+        if (!earned) {
+          progressText = "あと" + (definition.threshold - completedCount) + "回で解禁";
+        }
+      } else if (definition.category === "streak") {
+        earned = longestStreak >= definition.threshold;
+        if (!earned) {
+          progressText = "過去最長の連続記録: " + longestStreak + "日（あと" +
+            (definition.threshold - longestStreak) + "日で解禁）";
+        }
+      } else if (definition.category === "score") {
+        var bestScore = completedCount > 0 ? maxScore : 0;
+        earned = completedCount > 0 && maxScore >= definition.threshold;
+        if (!earned) {
+          progressText = "現在の自己ベスト: " + bestScore + "点（あと" +
+            (definition.threshold - bestScore) + "点で解禁）";
+        }
+      } else {
+        // improvement category（score_improve_10）
+        if (completedCount < 2 || firstScore === null) {
+          earned = false;
+          progressText = "まず2回以上練習すると表示されます";
+        } else {
+          var improvement = maxScore - firstScore;
+          earned = improvement >= 10;
+          if (!earned) {
+            progressText = "現在の向上幅: " + improvement + "点（あと" +
+              (10 - improvement) + "点で解禁）";
+          }
+        }
+      }
+
+      return {
+        id: definition.id,
+        title: definition.title,
+        description: definition.description,
+        earned: earned,
+        progressText: earned ? null : progressText
+      };
+    });
+  }
+
   function updateHistoryCompanyFilterOptions(logs) {
     var select = $("historyCompanyFilter");
     if (!select) {
@@ -4738,6 +4852,44 @@
     body.appendChild(svg);
   }
 
+  function renderAchievementBadges(logs) {
+    var container = $("achievementBadges");
+    if (!container) {
+      return;
+    }
+    container.textContent = "";
+
+    var achievements = computeAchievements(logs);
+    achievements.forEach(function (achievement) {
+      var card = document.createElement("article");
+      card.className = "achievement-badge" + (achievement.earned ? " is-earned" : " is-locked");
+
+      var title = document.createElement("p");
+      title.className = "achievement-badge-title";
+      title.textContent = achievement.title;
+      card.appendChild(title);
+
+      var description = document.createElement("p");
+      description.className = "achievement-badge-description";
+      description.textContent = achievement.description;
+      card.appendChild(description);
+
+      if (achievement.earned) {
+        var earnedLabel = document.createElement("p");
+        earnedLabel.className = "achievement-badge-status";
+        earnedLabel.textContent = "達成済み";
+        card.appendChild(earnedLabel);
+      } else if (achievement.progressText) {
+        var progress = document.createElement("p");
+        progress.className = "achievement-badge-progress";
+        progress.textContent = achievement.progressText;
+        card.appendChild(progress);
+      }
+
+      container.appendChild(card);
+    });
+  }
+
   function renderHistory() {
     var logs = appState.activeAccountId ? getAccountInterviewLogs(appState.activeAccountId) : [];
     var list = $("historyList");
@@ -4748,6 +4900,7 @@
     var filteredLogs = applyHistoryFilterAndSort(logs);
     ensureHistoryScoreChart();
     renderHistoryScoreChart(filteredLogs);
+    renderAchievementBadges(logs);
 
     if (list) {
       list.textContent = "";
