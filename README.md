@@ -121,3 +121,4 @@ APIキーはローカルサーバーの `/api/openai` 経由でOpenAIへ送信�
 - AI回答評価・正解データ設計: [docs/answer-evaluation-design.md](docs/answer-evaluation-design.md)
 - 音声入力・一時録音設計: [docs/voice-input-design.md](docs/voice-input-design.md)
 - 質問読み上げ設計: [docs/question-speech-design.md](docs/question-speech-design.md)
+- 本番公開の方針（アーキテクチャ・セキュリティ・デプロイ手順）: [docs/production-deployment.md](docs/production-deployment.md)

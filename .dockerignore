@@ -1,0 +1,9 @@
+.git
+node_modules
+test
+docs
+*.md
+.gitattributes
+firebase.json
+firestore.rules
+firestore.indexes.json

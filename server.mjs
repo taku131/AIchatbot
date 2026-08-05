@@ -67,9 +67,62 @@ function extractOutputText(data) {
   return "";
 }
 
+// /api/openaiは認証を持たないため、公開URLが知られると誰でも（自分のOpenAI
+// キーを使って）中継できてしまう。本番公開時の乱用対策として、IPアドレス単位の
+// 簡易レート制限をかける。単一インスタンスのメモリ上でのみ有効な簡易対策であり、
+// Cloud Runが複数インスタンスへスケールした場合は制限がインスタンスごとに別々に
+// かかる点に注意（詳細はdocs/production-deployment.mdを参照）。
+//
+// X-Forwarded-Forは、Cloud Run配下ではGoogleのフロントエンドが実クライアントIPを
+// 先頭に設定して付与するため信頼できるが、任意のリバースプロキシを経由しない
+// 直接アクセス環境（例: ローカルでこのサーバーを直接インターネットに公開する場合）
+// では送信者が自由に偽装できてしまう点に注意（本番運用はCloud Run配下を前提とする）。
+//
+// 偽装・大量の異なるIPからのアクセスでMapが際限なく増え続けないよう、
+// 一定件数を超えたら期限切れエントリを掃除する（簡易的な安全弁）。
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 20;
+const RATE_LIMIT_MAX_TRACKED_KEYS = 5000;
+const rateLimitState = new Map();
+
+function getClientKey(request) {
+  const forwardedFor = request.headers["x-forwarded-for"];
+  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
+    return forwardedFor.split(",")[0].trim();
+  }
+  return request.socket.remoteAddress || "unknown";
+}
+
+function cleanupExpiredRateLimitEntries(now) {
+  for (const [key, entry] of rateLimitState) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+      rateLimitState.delete(key);
+    }
+  }
+}
+
+function isRateLimited(clientKey) {
+  const now = Date.now();
+  const entry = rateLimitState.get(clientKey);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    if (rateLimitState.size >= RATE_LIMIT_MAX_TRACKED_KEYS) {
+      cleanupExpiredRateLimitEntries(now);
+    }
+    rateLimitState.set(clientKey, { windowStart: now, count: 1 });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
 async function handleOpenAiProxy(request, response) {
   if (request.method !== "POST") {
     sendJson(response, 405, { error: "Method Not Allowed" });
+    return;
+  }
+
+  if (isRateLimited(getClientKey(request))) {
+    sendJson(response, 429, { error: "Too many requests. Please wait a moment and try again." });
     return;
   }
 
