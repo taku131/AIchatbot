@@ -271,6 +271,14 @@
           </select>
         </div>
         <div class="field">
+          <label for="questionSourceSelect">質問の出題方法</label>
+          <select id="questionSourceSelect" name="questionSource">
+            <option value="ai" selected>AIによる動的生成</option>
+            <option value="bank">定番質問集から出題</option>
+          </select>
+          <p class="field-help">定番質問集モードでは、カテゴリに合った定番質問を順番に出題します。使い切ると自動的にAI生成に切り替わります。深掘り質問は引き続きAIが生成します。</p>
+        </div>
+        <div class="field">
           <label for="interviewerTypeSelect">AI面接官タイプ</label>
           <input id="interviewerTypeSelect" name="interviewerType" type="hidden" value="friendly">
           <div id="interviewerAvatarGrid" class="interviewer-avatar-grid" role="radiogroup" aria-label="AI面接官タイプ"></div>
@@ -349,6 +357,18 @@
 
       <div class="answer-panel">
         <label for="answerInput">あなたの回答</label>
+        <details class="star-guide-panel">
+          <summary class="star-guide-summary">回答の組み立て方（STAR法）を見る</summary>
+          <div class="star-guide-body">
+            <p class="star-guide-intro">まず結論を一言で伝えたうえで、以下の順に具体的に話すと伝わりやすくなります。</p>
+            <ul class="star-guide-list">
+              <li><strong>状況 (Situation)</strong>: どんな場面・立場での出来事だったか</li>
+              <li><strong>課題 (Task)</strong>: 何を達成・解決する必要があったか</li>
+              <li><strong>行動 (Action)</strong>: 自分が具体的に何を考え、どう行動したか</li>
+              <li><strong>結果 (Result)</strong>: 行動の結果どうなったか、そこから何を学んだか</li>
+            </ul>
+          </div>
+        </details>
         <textarea id="answerInput" name="answer" rows="6" placeholder="面接で話すつもりで回答してください。Ctrl + Enter でも送信できます。"></textarea>
         <div class="voice-input-panel" aria-label="音声入力">
           <div class="voice-input-actions">

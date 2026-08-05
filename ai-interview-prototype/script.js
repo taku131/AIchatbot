@@ -18,6 +18,7 @@
     interviewType: "first",
     targetType: "new-graduate",
     category: "self_pr",
+    questionSource: "ai",
     interviewerType: "friendly",
     interviewerTypeMode: "fixed",
     interviewerTypeSelection: "friendly",
@@ -57,6 +58,124 @@
     career: "キャリア",
     reverse_question: "逆質問",
     default: "その他"
+  };
+
+  var STAR_QUESTION_BANK = {
+    self_pr: [
+      "自己PRをしてください。",
+      "あなたの強みを、エピソードを交えて教えてください。",
+      "その強みは、当社のどんな場面で活かせると思いますか。",
+      "周囲の人から、あなたはどんな人だと言われますか。",
+      "自己PRの中で、特に自信を持っているエピソードを一つ詳しく教えてください。"
+    ],
+    motivation: [
+      "当社を志望する理由を教えてください。",
+      "数ある企業の中で、なぜ当社に興味を持ったのですか。",
+      "当社でどのような仕事をしたいと考えていますか。",
+      "業界研究の中で、当社を選んだ決め手は何ですか。",
+      "入社後に成し遂げたいことを教えてください。",
+      "他社ではなく当社でなければならない理由は何ですか。"
+    ],
+    student_life: [
+      "学生時代に最も力を入れたことを教えてください。",
+      "その経験の中で、あなたはどのような役割を担いましたか。",
+      "目標に向けて、具体的にどのような行動を取りましたか。",
+      "その取り組みの中で直面した困難と、乗り越え方を教えてください。",
+      "その経験から得た学びを、今後どう活かしたいですか。"
+    ],
+    strength_weakness: [
+      "あなたの長所と短所を教えてください。",
+      "短所によって困った経験と、その対処法を教えてください。",
+      "長所を発揮して成果を出したエピソードを教えてください。",
+      "短所を克服するために、日頃取り組んでいることはありますか。",
+      "周囲と比べて、自分ならではの強みだと思う点は何ですか。"
+    ],
+    research: [
+      "現在取り組んでいる研究内容を教えてください。",
+      "その研究テーマを選んだ理由を教えてください。",
+      "研究を進める中で、最も苦労した点は何ですか。",
+      "研究の独自性や工夫している点を教えてください。",
+      "研究を通じて身についた力を、仕事にどう活かしたいですか。"
+    ],
+    development: [
+      "これまでに開発した成果物について教えてください。",
+      "その開発において、あなたが担当した役割を教えてください。",
+      "技術選定の際に、どのような基準で判断しましたか。",
+      "開発中に発生した課題と、解決のために取った行動を教えてください。",
+      "その開発を通じて得た学びを教えてください。",
+      "チームでの開発経験があれば、どのように役割分担をしましたか。"
+    ],
+    team: [
+      "チームで何かに取り組んだ経験を教えてください。",
+      "そのチームの中で、あなたはどのような役割を担いましたか。",
+      "チーム内で意見が対立した際、どのように対応しましたか。",
+      "チームの成果を高めるために、あなたが工夫したことは何ですか。",
+      "リーダーシップを発揮した経験があれば教えてください。"
+    ],
+    failure: [
+      "これまでに経験した失敗について教えてください。",
+      "その失敗の原因は何だったと分析していますか。",
+      "失敗した後、どのように立て直しましたか。",
+      "その失敗から得た教訓を、今どう活かしていますか。",
+      "失敗を恐れずに挑戦した経験があれば教えてください。"
+    ],
+    career: [
+      "将来のキャリアプランを教えてください。",
+      "5年後、10年後にどのような人材像になっていたいですか。",
+      "当社でどのように成長していきたいと考えていますか。",
+      "キャリアを考える上で、最も大切にしている価値観は何ですか。",
+      "希望する職種以外に興味のある分野はありますか。"
+    ],
+    reverse_question: [
+      "最後に何か質問はありますか。",
+      "当社について、聞いておきたいことはありますか。",
+      "配属後の働き方について、気になる点はありますか。",
+      "入社までに準備しておくとよいことはありますか。",
+      "面接を受けてみて、当社に対する印象は変わりましたか。"
+    ]
+  };
+
+  // 面接タイプによって聞き方の重心が変わるカテゴリだけ、上位互換の質問を
+  // interviewType×category単位で追加する（全組み合わせを埋めるのではなく、
+  // 面接タイプごとに意味のある差が出る組み合わせに絞る）。
+  // pickBankQuestion()はこちらを優先し、尽きたらSTAR_QUESTION_BANK[category]に続く。
+  var STAR_QUESTION_BANK_TYPE_OVERRIDES = {
+    technical: {
+      development: [
+        "技術面接の観点で伺います。今の技術スタックを選んだ理由と、代替案との比較を教えてください。",
+        "設計上、最もトレードオフに悩んだ判断とその根拠を教えてください。",
+        "本番運用後に見つかった問題があれば、原因の切り分け方と対応を教えてください。"
+      ]
+    },
+    research: {
+      research: [
+        "研究面接の観点で伺います。研究の目的と、それを検証するための手法の対応関係を説明してください。",
+        "先行研究と比べた独自性は何ですか。",
+        "研究成果の再現性・妥当性はどのように担保していますか。"
+      ]
+    },
+    final: {
+      career: [
+        "最終面接として伺います。入社後3年間で、どのように会社に貢献したいですか。",
+        "他社の選考状況を踏まえた上で、当社を選ぶ決め手を改めて教えてください。"
+      ],
+      motivation: [
+        "最終確認です。当社への入社意思は固まっていますか。理由も含めて教えてください。"
+      ]
+    },
+    intern: {
+      student_life: [
+        "インターンとして伺います。限られた期間でどう成果を出すか、学生時代の経験から教えてください。"
+      ],
+      motivation: [
+        "数あるインターン先の中で、当社を選んだ理由を教えてください。"
+      ]
+    },
+    hr: {
+      strength_weakness: [
+        "人事の観点から伺います。短所が原因でチームに影響が出た経験と、その後の対応を教えてください。"
+      ]
+    }
   };
 
   var STATUS_LABELS = {
@@ -1976,6 +2095,7 @@
       interviewType: getValue("interviewTypeSelect", DEFAULT_SETTINGS.interviewType),
       targetType: getValue("targetTypeSelect", DEFAULT_SETTINGS.targetType),
       category: normalizeCategory(getValue("categorySelect", DEFAULT_SETTINGS.category)),
+      questionSource: getValue("questionSourceSelect", DEFAULT_SETTINGS.questionSource),
       interviewerType: getValue("interviewerTypeSelect", DEFAULT_SETTINGS.interviewerType),
       questionCount: Math.max(1, parseInt(getValue("questionCountSelect", DEFAULT_SETTINGS.questionCount), 10) || DEFAULT_SETTINGS.questionCount),
       userProfile: getRawValue("userProfileInput", ""),
@@ -2581,6 +2701,30 @@
     });
   }
 
+  function pickBankQuestion(settings) {
+    var category = normalizeCategory(settings.category);
+    var interviewType = settings.interviewType;
+    var typeOverrides = (STAR_QUESTION_BANK_TYPE_OVERRIDES[interviewType] || {})[category] || [];
+    // 面接タイプに合わせたキュレーション（あれば）を先に出題し、
+    // 尽きたらカテゴリ共通の定番質問集に続ける。
+    var pool = typeOverrides.concat(STAR_QUESTION_BANK[category] || []);
+    for (var index = 0; index < pool.length; index += 1) {
+      if (!wasQuestionAsked(pool[index])) {
+        return pool[index];
+      }
+    }
+    return null;
+  }
+
+  // 定番質問集モードで出題する質問は、settings.categoryに対応するcoverage topic
+  // （initializeTopicCoverage()がcategory_<カテゴリ>という形で必ず1つ用意している）に
+  // 固定で紐づける。selectFallbackTopic()任せにすると、企業理解・技術判断など
+  // カテゴリ外のtopicが付いてしまい、出題内容とtopicがずれることがあるため。
+  function bankQuestionTopic(settings) {
+    var category = normalizeCategory(settings.category);
+    return findCoverageTopic("category_" + category) || createCategoryTopic(category);
+  }
+
   function getInterviewProgressSummary() {
     var turns = getPreviousTurns();
     return {
@@ -2945,6 +3089,14 @@
   }
 
   async function getInterviewQuestion(settings) {
+    if (settings.questionSource === "bank") {
+      var bankQuestion = pickBankQuestion(settings);
+      if (bankQuestion) {
+        applyQuestionTopic(bankQuestion, bankQuestionTopic(settings));
+        return bankQuestion;
+      }
+      // 定番質問集を使い切った場合は、以下の既存ロジック（AI生成→モック生成）にそのまま処理を続ける
+    }
     var topic = selectFallbackTopic(settings);
     try {
       var result = await callOpenAi(
@@ -3082,12 +3234,25 @@
         evaluation: normalized
       };
     }
-    var nextQuestion = normalized.nextQuestion;
+    var nextQuestion = null;
     var nextTopic = selectFallbackTopic(settings);
-    if (!nextQuestion || wasQuestionAsked(nextQuestion)) {
-      nextQuestion = await getInterviewQuestion(settings);
-    } else {
-      applyQuestionTopic(nextQuestion, nextTopic);
+    if (settings.questionSource === "bank") {
+      // 定番質問集モードでは、深掘り以外の通常の次問もバンクを優先する。
+      // AIが提案したnextQuestionを先に採用してしまうと、バンクを使い切るまで
+      // 順番に出題するという仕様を満たせないため。
+      var bankQuestion = pickBankQuestion(settings);
+      if (bankQuestion) {
+        nextQuestion = bankQuestion;
+        applyQuestionTopic(nextQuestion, bankQuestionTopic(settings));
+      }
+    }
+    if (!nextQuestion) {
+      nextQuestion = normalized.nextQuestion;
+      if (!nextQuestion || wasQuestionAsked(nextQuestion)) {
+        nextQuestion = await getInterviewQuestion(settings);
+      } else {
+        applyQuestionTopic(nextQuestion, nextTopic);
+      }
     }
     if (!nextQuestion || wasQuestionAsked(nextQuestion)) {
       nextQuestion = generateQuestion(Object.assign({}, settings || {}, {
@@ -4933,6 +5098,7 @@
     setValue("interviewTypeSelect", settings.interviewType || DEFAULT_SETTINGS.interviewType);
     setValue("targetTypeSelect", settings.targetType || DEFAULT_SETTINGS.targetType);
     setValue("categorySelect", normalizeCategory(settings.category || DEFAULT_SETTINGS.category));
+    setValue("questionSourceSelect", settings.questionSource || DEFAULT_SETTINGS.questionSource);
     setValue("questionCountSelect", settings.questionCount || DEFAULT_SETTINGS.questionCount);
     setValue("userProfileInput", settings.userProfile || "");
     // カメラ利用は毎セッション明示的な同意操作を必須にするため、過去の設定から
